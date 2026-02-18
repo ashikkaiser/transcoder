@@ -1,0 +1,11 @@
+target/
+.git/
+.env
+*.db
+*.db-shm
+*.db-wal
+.cursor/
+.vscode/
+node_modules/
+README.md
+.dockerignore

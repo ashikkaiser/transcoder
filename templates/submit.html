@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block title %}Submit Job{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h2 class="text-2xl font-semibold text-white">Submit Transcode Job</h2>
+    <p class="text-sm text-gray-500 mt-1">Add one or more videos for transcoding to HLS</p>
+</div>
+
+<div class="bg-surface-100 rounded-xl border border-gray-800/60 p-6">
+    <form method="post" action="/ui/submit" id="submit-form">
+        <div id="video-rows" class="space-y-6">
+            <!-- Row 1 -->
+            <div class="video-row p-4 rounded-lg border border-gray-800/40 bg-surface-200">
+                <div class="flex items-center justify-between mb-4">
+                    <span class="text-sm font-medium text-gray-300">Video #1</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-400 mb-1.5">Video ID <span class="text-red-400">*</span></label>
+                        <input type="number" name="video_id[]" required
+                               class="w-full rounded-lg border border-gray-700 bg-surface px-3 py-2 text-sm text-white
+                                      placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors"
+                               placeholder="e.g. 12345">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-400 mb-1.5">S3 Key <span class="text-red-400">*</span></label>
+                        <input type="text" name="s3_key[]" required
+                               class="w-full rounded-lg border border-gray-700 bg-surface px-3 py-2 text-sm text-white
+                                      placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors"
+                               placeholder="e.g. videos/input/12345.mp4">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-400 mb-1.5">Video URL <span class="text-red-400">*</span></label>
+                        <input type="url" name="video_url[]" required
+                               class="w-full rounded-lg border border-gray-700 bg-surface px-3 py-2 text-sm text-white
+                                      placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors"
+                               placeholder="https://example.com/video.mp4">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-400 mb-1.5">Callback URL <span class="text-gray-600 font-normal">(optional)</span></label>
+                        <input type="text" name="callback_url[]"
+                               class="w-full rounded-lg border border-gray-700 bg-surface px-3 py-2 text-sm text-white
+                                      placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors"
+                               placeholder="https://api.example.com/webhook or /api/webhook">
+                        <p class="mt-1 text-[11px] text-gray-600">Leave empty to use the Callback Base URL from Settings, or enter a full URL to override.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-4 flex items-center gap-3">
+            <button type="button" onclick="addRow()"
+                    class="inline-flex items-center gap-2 rounded-lg border border-dashed border-gray-700 px-4 py-2 text-sm text-gray-400 hover:text-white hover:border-gray-500 transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                Add another video
+            </button>
+        </div>
+
+        <div class="mt-6 pt-6 border-t border-gray-800/40">
+            <p class="text-xs text-gray-500 mb-4"><span class="text-red-400">*</span> Required fields</p>
+            <div class="flex items-center justify-end gap-3">
+                <a href="/ui" class="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">Cancel</a>
+                <button type="submit"
+                        class="inline-flex items-center gap-2 rounded-lg bg-accent px-6 py-2.5 text-sm font-medium text-white hover:bg-accent-light transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    Submit
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+let rowCount = 1;
+function addRow() {
+    rowCount++;
+    const container = document.getElementById('video-rows');
+    const row = document.createElement('div');
+    row.className = 'video-row p-4 rounded-lg border border-gray-800/40 bg-surface-200';
+    row.innerHTML = `
+        <div class="flex items-center justify-between mb-4">
+            <span class="text-sm font-medium text-gray-300">Video #${rowCount}</span>
+            <button type="button" onclick="this.closest('.video-row').remove()"
+                    class="text-xs text-gray-500 hover:text-red-400 transition-colors">Remove</button>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-xs font-medium text-gray-400 mb-1.5">Video ID <span class="text-red-400">*</span></label>
+                <input type="number" name="video_id[]" required
+                       class="w-full rounded-lg border border-gray-700 bg-surface px-3 py-2 text-sm text-white
+                              placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors"
+                       placeholder="e.g. 12345">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-400 mb-1.5">S3 Key <span class="text-red-400">*</span></label>
+                <input type="text" name="s3_key[]" required
+                       class="w-full rounded-lg border border-gray-700 bg-surface px-3 py-2 text-sm text-white
+                              placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors"
+                       placeholder="e.g. videos/input/12345.mp4">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-400 mb-1.5">Video URL <span class="text-red-400">*</span></label>
+                <input type="url" name="video_url[]" required
+                       class="w-full rounded-lg border border-gray-700 bg-surface px-3 py-2 text-sm text-white
+                              placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors"
+                       placeholder="https://example.com/video.mp4">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-400 mb-1.5">Callback URL <span class="text-gray-600 font-normal">(optional)</span></label>
+                <input type="text" name="callback_url[]"
+                       class="w-full rounded-lg border border-gray-700 bg-surface px-3 py-2 text-sm text-white
+                              placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors"
+                       placeholder="https://api.example.com/webhook or /api/webhook">
+                <p class="mt-1 text-[11px] text-gray-600">Leave empty to use the Callback Base URL from Settings, or enter a full URL to override.</p>
+            </div>
+        </div>
+    `;
+    container.appendChild(row);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,127 @@
+<div class="overflow-x-auto">
+<table class="w-full">
+    <thead>
+        <tr class="border-b border-gray-800/60">
+            <th class="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider text-gray-500">Job ID</th>
+            <th class="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider">
+                <a href="/ui/jobs?sort=video_id&dir={% if sort_by == "video_id" && sort_dir == "asc" %}desc{% else %}asc{% endif %}{{ status_param }}{{ search_param }}"
+                   class="inline-flex items-center gap-1 hover:text-gray-300 transition-colors {% if sort_by == "video_id" %}text-accent-light{% else %}text-gray-500{% endif %}">
+                    Video ID
+                    {% if sort_by == "video_id" %}
+                    <svg class="w-3.5 h-3.5 {% if sort_dir == "asc" %}rotate-180{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    {% endif %}
+                </a>
+            </th>
+            <th class="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider">
+                <a href="/ui/jobs?sort=status&dir={% if sort_by == "status" && sort_dir == "asc" %}desc{% else %}asc{% endif %}{{ status_param }}{{ search_param }}"
+                   class="inline-flex items-center gap-1 hover:text-gray-300 transition-colors {% if sort_by == "status" %}text-accent-light{% else %}text-gray-500{% endif %}">
+                    Status
+                    {% if sort_by == "status" %}
+                    <svg class="w-3.5 h-3.5 {% if sort_dir == "asc" %}rotate-180{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    {% endif %}
+                </a>
+            </th>
+            <th class="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Attempt</th>
+            <th class="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider">
+                <a href="/ui/jobs?sort=created_at&dir={% if sort_by == "created_at" && sort_dir == "desc" %}asc{% else %}desc{% endif %}{{ status_param }}{{ search_param }}"
+                   class="inline-flex items-center gap-1 hover:text-gray-300 transition-colors {% if sort_by == "created_at" %}text-accent-light{% else %}text-gray-500{% endif %}">
+                    Created
+                    {% if sort_by == "created_at" %}
+                    <svg class="w-3.5 h-3.5 {% if sort_dir == "asc" %}rotate-180{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    {% endif %}
+                </a>
+            </th>
+            <th class="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider">
+                <a href="/ui/jobs?sort=updated_at&dir={% if sort_by == "updated_at" && sort_dir == "desc" %}asc{% else %}desc{% endif %}{{ status_param }}{{ search_param }}"
+                   class="inline-flex items-center gap-1 hover:text-gray-300 transition-colors {% if sort_by == "updated_at" %}text-accent-light{% else %}text-gray-500{% endif %}">
+                    Updated
+                    {% if sort_by == "updated_at" %}
+                    <svg class="w-3.5 h-3.5 {% if sort_dir == "asc" %}rotate-180{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    {% endif %}
+                </a>
+            </th>
+            <th class="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+        </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-800/40">
+        {% if jobs.is_empty() %}
+        <tr>
+            <td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500">No jobs found.</td>
+        </tr>
+        {% else %}
+        {% for job in jobs %}
+        <tr class="hover:bg-white/[0.02] transition-colors">
+            <td class="px-4 py-3">
+                <a href="/ui/jobs/{{ job.id }}" class="text-xs font-mono text-gray-500 hover:text-gray-300 transition-colors" title="{{ job.id }}">
+                    {{ job.id[..8] }}…
+                </a>
+            </td>
+            <td class="px-4 py-3">
+                <a href="/ui/jobs/{{ job.id }}" class="text-sm font-medium text-accent-light hover:text-white transition-colors">
+                    {{ job.video_id }}
+                </a>
+            </td>
+            <td class="px-4 py-3">
+                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium
+                    {% if job.status == "completed" %}bg-emerald-500/10 text-emerald-400
+                    {% else if job.status == "failed" %}bg-red-500/10 text-red-400
+                    {% else if job.status == "canceled" %}bg-gray-500/10 text-gray-400
+                    {% else if job.status == "queued" %}bg-yellow-500/10 text-yellow-400
+                    {% else %}bg-blue-500/10 text-blue-400{% endif %}">
+                    {% if job.status == "downloading" || job.status == "transcoding" || job.status == "uploading" %}
+                    <span class="w-1.5 h-1.5 rounded-full bg-current status-pulse"></span>
+                    {% endif %}
+                    {{ job.status }}
+                </span>
+            </td>
+            <td class="px-4 py-3 text-sm text-gray-400">{{ job.attempt }}/{{ job.max_attempts }}</td>
+            <td class="px-4 py-3">
+                <span class="text-sm text-gray-300 time-ago" title="{{ job.created_at }}" data-ts="{{ job.created_at }}"></span>
+            </td>
+            <td class="px-4 py-3">
+                <span class="text-sm text-gray-300 time-ago" title="{{ job.updated_at }}" data-ts="{{ job.updated_at }}"></span>
+            </td>
+            <td class="px-4 py-3 text-right whitespace-nowrap">
+                <div class="inline-flex items-center gap-0.5">
+                    <a href="/ui/jobs/{{ job.id }}"
+                       class="px-2 py-1 text-xs rounded text-gray-500 hover:text-accent-light hover:bg-accent/10 transition-colors"
+                       title="View details">Details</a>
+
+                    {% if job.status == "failed" %}
+                    <form method="post" action="/ui/jobs/{{ job.id }}/retry" class="inline"
+                          onsubmit="return confirm('Retry this job?')">
+                        <button type="submit"
+                                class="px-2 py-1 text-xs rounded text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
+                                title="Re-queue for retry">Retry</button>
+                    </form>
+                    {% endif %}
+
+                    {% if job.status != "completed" && job.status != "canceled" && job.status != "failed" %}
+                    <form method="post" action="/ui/jobs/{{ job.video_id }}/cancel" class="inline"
+                          onsubmit="return confirm('Cancel this job?')">
+                        <button type="submit"
+                                class="px-2 py-1 text-xs rounded text-gray-500 hover:text-orange-400 hover:bg-orange-500/10 transition-colors"
+                                title="Cancel job">Cancel</button>
+                    </form>
+                    {% endif %}
+
+                    {% if job.status == "completed" || job.status == "failed" || job.status == "canceled" %}
+                    <form method="post" action="/ui/jobs/{{ job.id }}/delete" class="inline"
+                          onsubmit="return confirm('Delete this job permanently?')">
+                        <button type="submit"
+                                class="px-2 py-1 text-xs rounded text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                title="Delete job">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                            </svg>
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+        {% endif %}
+    </tbody>
+</table>
+</div>

@@ -1,0 +1,379 @@
+{% extends "base.html" %}
+
+{% block title %}Jobs{% endblock %}
+
+{% block content %}
+<div class="mb-8 flex items-center justify-between">
+    <div>
+        <h2 class="text-2xl font-semibold text-white">Jobs</h2>
+        <p class="text-sm text-gray-500 mt-1">{{ total_jobs }} total jobs</p>
+    </div>
+    <a href="/ui/submit"
+       class="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-light transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+        </svg>
+        New Job
+    </a>
+</div>
+
+<!-- Search bar -->
+<form method="get" action="/ui/jobs" class="mb-6">
+    {% if !current_status.is_empty() %}
+    <input type="hidden" name="status" value="{{ current_status }}"/>
+    {% endif %}
+    <div class="flex gap-3">
+        <div class="relative flex-1 max-w-md">
+            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                <svg class="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+            </div>
+            <input type="text"
+                   name="search"
+                   value="{{ search_query }}"
+                   placeholder="Search by Video ID..."
+                   class="w-full rounded-lg border border-gray-700 bg-surface-100 py-2 pl-10 pr-4 text-sm text-white placeholder-gray-500 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"/>
+        </div>
+        <button type="submit"
+                class="inline-flex items-center gap-2 rounded-lg bg-accent/10 border border-accent/20 px-4 py-2 text-sm font-medium text-accent-light hover:bg-accent/20 transition-colors">
+            Search
+        </button>
+        {% if !search_query.is_empty() %}
+        <a href="/ui/jobs{% if !current_status.is_empty() %}?status={{ current_status }}{% endif %}"
+           class="inline-flex items-center gap-2 rounded-lg border border-gray-700 px-4 py-2 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
+            Clear
+        </a>
+        {% endif %}
+    </div>
+    {% if !search_query.is_empty() && total_jobs == 0 %}
+    <p class="mt-3 text-sm text-amber-400/80">
+        <svg class="inline w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/>
+        </svg>
+        No jobs found for Video ID "{{ search_query }}". Make sure the ID is a number.
+    </p>
+    {% endif %}
+</form>
+
+<!-- Status filter tabs -->
+<div class="flex gap-2 mb-6 flex-wrap">
+    <a href="/ui/jobs{{ search_param }}"
+       class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+              {% if current_status.is_empty() %}bg-accent/10 text-accent-light border border-accent/20{% else %}text-gray-400 hover:text-white hover:bg-white/5 border border-transparent{% endif %}">
+        All
+    </a>
+    {% for tab in all_statuses %}
+    <a href="/ui/jobs?status={{ tab.name }}{{ search_param }}"
+       class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+              {% if tab.active %}bg-accent/10 text-accent-light border border-accent/20{% else %}text-gray-400 hover:text-white hover:bg-white/5 border border-transparent{% endif %}">
+        {{ tab.name }}
+    </a>
+    {% endfor %}
+</div>
+
+<!-- Job Management & Cleanup -->
+{% if terminal_completed > 0 || terminal_failed > 0 || terminal_canceled > 0 %}
+<div class="mb-6 bg-surface-100 rounded-xl border border-gray-800/60 overflow-hidden">
+    <button type="button" onclick="togglePanel('cleanup-panel')"
+            class="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-white/[0.02] transition-colors">
+        <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+            <span class="text-sm font-medium text-gray-200">Job Management</span>
+            <span class="text-xs text-gray-500">
+                {{ terminal_completed + terminal_failed + terminal_canceled }} cleanable jobs
+            </span>
+        </div>
+        <svg id="cleanup-chevron" class="w-4 h-4 text-gray-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+        </svg>
+    </button>
+
+    <div id="cleanup-panel" class="hidden border-t border-gray-800/40">
+        <div class="p-5 space-y-5">
+            <!-- Quick stats -->
+            <div class="grid grid-cols-3 gap-3">
+                <div class="rounded-lg bg-surface-200 border border-gray-800/40 p-3 text-center">
+                    <p class="text-lg font-semibold text-emerald-400">{{ terminal_completed }}</p>
+                    <p class="text-[11px] text-gray-500 mt-0.5">Completed</p>
+                </div>
+                <div class="rounded-lg bg-surface-200 border border-gray-800/40 p-3 text-center">
+                    <p class="text-lg font-semibold text-red-400">{{ terminal_failed }}</p>
+                    <p class="text-[11px] text-gray-500 mt-0.5">Failed</p>
+                </div>
+                <div class="rounded-lg bg-surface-200 border border-gray-800/40 p-3 text-center">
+                    <p class="text-lg font-semibold text-gray-400">{{ terminal_canceled }}</p>
+                    <p class="text-[11px] text-gray-500 mt-0.5">Canceled</p>
+                </div>
+            </div>
+
+            <!-- Actions grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {% if terminal_failed > 0 %}
+                <!-- Retry All Failed -->
+                <form method="post" action="/ui/jobs/purge"
+                      onsubmit="return confirm('Re-queue all {{ terminal_failed }} failed job(s) for retry?')">
+                    <input type="hidden" name="action" value="retry_all_failed"/>
+                    <button type="submit"
+                            class="w-full flex items-center gap-3 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-left hover:bg-amber-500/10 transition-colors group">
+                        <div class="flex-shrink-0 w-9 h-9 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                            <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-amber-300 group-hover:text-amber-200">Retry All Failed</p>
+                            <p class="text-[11px] text-gray-500">Re-queue {{ terminal_failed }} failed job(s)</p>
+                        </div>
+                    </button>
+                </form>
+                {% endif %}
+
+                {% if terminal_completed > 0 %}
+                <!-- Purge Completed -->
+                <form method="post" action="/ui/jobs/purge"
+                      onsubmit="return confirm('Permanently delete all {{ terminal_completed }} completed job(s)? This cannot be undone.')">
+                    <input type="hidden" name="action" value="purge_completed"/>
+                    <button type="submit"
+                            class="w-full flex items-center gap-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-left hover:bg-emerald-500/10 transition-colors group">
+                        <div class="flex-shrink-0 w-9 h-9 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-emerald-300 group-hover:text-emerald-200">Purge Completed</p>
+                            <p class="text-[11px] text-gray-500">Delete {{ terminal_completed }} completed job(s)</p>
+                        </div>
+                    </button>
+                </form>
+                {% endif %}
+
+                {% if terminal_failed > 0 %}
+                <!-- Purge Failed -->
+                <form method="post" action="/ui/jobs/purge"
+                      onsubmit="return confirm('Permanently delete all {{ terminal_failed }} failed job(s)? This cannot be undone.')">
+                    <input type="hidden" name="action" value="purge_failed"/>
+                    <button type="submit"
+                            class="w-full flex items-center gap-3 rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-left hover:bg-red-500/10 transition-colors group">
+                        <div class="flex-shrink-0 w-9 h-9 rounded-lg bg-red-500/10 flex items-center justify-center">
+                            <svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-red-300 group-hover:text-red-200">Purge Failed</p>
+                            <p class="text-[11px] text-gray-500">Delete {{ terminal_failed }} failed job(s)</p>
+                        </div>
+                    </button>
+                </form>
+                {% endif %}
+
+                {% if terminal_canceled > 0 %}
+                <!-- Purge Canceled -->
+                <form method="post" action="/ui/jobs/purge"
+                      onsubmit="return confirm('Permanently delete all {{ terminal_canceled }} canceled job(s)? This cannot be undone.')">
+                    <input type="hidden" name="action" value="purge_canceled"/>
+                    <button type="submit"
+                            class="w-full flex items-center gap-3 rounded-lg border border-gray-600/20 bg-gray-500/5 p-3 text-left hover:bg-gray-500/10 transition-colors group">
+                        <div class="flex-shrink-0 w-9 h-9 rounded-lg bg-gray-500/10 flex items-center justify-center">
+                            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-gray-300 group-hover:text-gray-200">Purge Canceled</p>
+                            <p class="text-[11px] text-gray-500">Delete {{ terminal_canceled }} canceled job(s)</p>
+                        </div>
+                    </button>
+                </form>
+                {% endif %}
+
+                <!-- Purge All Terminal -->
+                <form method="post" action="/ui/jobs/purge"
+                      onsubmit="return confirm('Permanently delete ALL {{ terminal_completed + terminal_failed + terminal_canceled }} completed, failed, and canceled jobs? This cannot be undone.')">
+                    <input type="hidden" name="action" value="purge_all_terminal"/>
+                    <button type="submit"
+                            class="w-full flex items-center gap-3 rounded-lg border border-gray-700 bg-surface-200 p-3 text-left hover:bg-white/5 transition-colors group">
+                        <div class="flex-shrink-0 w-9 h-9 rounded-lg bg-gray-700/50 flex items-center justify-center">
+                            <svg class="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-gray-200 group-hover:text-white">Purge All Finished</p>
+                            <p class="text-[11px] text-gray-500">Delete all completed + failed + canceled</p>
+                        </div>
+                    </button>
+                </form>
+
+                <!-- Purge Older Than -->
+                <form method="post" action="/ui/jobs/purge" class="col-span-1"
+                      onsubmit="return confirm('Delete all terminal jobs older than ' + this.older_than_days.value + ' day(s)? This cannot be undone.')">
+                    <input type="hidden" name="action" value="purge_older"/>
+                    <div class="flex items-center gap-3 rounded-lg border border-gray-700 bg-surface-200 p-3 hover:bg-white/5 transition-colors group">
+                        <div class="flex-shrink-0 w-9 h-9 rounded-lg bg-gray-700/50 flex items-center justify-center">
+                            <svg class="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-medium text-gray-200 group-hover:text-white">Purge Older Than</p>
+                            <div class="flex items-center gap-2 mt-1">
+                                <input type="number" name="older_than_days" value="7" min="1" max="365"
+                                       class="w-16 rounded border border-gray-700 bg-surface px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-accent"/>
+                                <span class="text-[11px] text-gray-500">days</span>
+                                <button type="submit"
+                                        class="ml-auto px-2.5 py-1 text-xs rounded bg-accent/10 border border-accent/20 text-accent-light hover:bg-accent/20 transition-colors">
+                                    Purge
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Jobs table -->
+<div class="bg-surface-100 rounded-xl border border-gray-800/60 overflow-hidden">
+    {% include "_jobs_table_full.html" %}
+</div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<div class="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+    <!-- Info -->
+    <p class="text-xs text-gray-500 order-2 sm:order-1">
+        Showing {{ (current_page - 1) * 20 + 1 }}&ndash;{% if current_page * 20 < total_jobs %}{{ current_page * 20 }}{% else %}{{ total_jobs }}{% endif %}
+        of {{ total_jobs }} jobs
+    </p>
+
+    <!-- Page controls -->
+    <div class="flex items-center gap-1 order-1 sm:order-2">
+        <!-- First -->
+        {% if current_page > 2 %}
+        <a href="/ui/jobs?page=1{{ status_param }}{{ search_param }}{{ sort_param }}"
+           class="px-2.5 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white hover:bg-white/5 border border-gray-800 transition-colors"
+           title="First page">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/></svg>
+        </a>
+        {% endif %}
+
+        <!-- Previous -->
+        {% if current_page > 1 %}
+        <a href="/ui/jobs?page={{ current_page - 1 }}{{ status_param }}{{ search_param }}{{ sort_param }}"
+           class="px-2.5 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white hover:bg-white/5 border border-gray-800 transition-colors">
+            Prev
+        </a>
+        {% endif %}
+
+        <!-- Page numbers (show nearby pages) -->
+        {% for p in 1..=total_pages %}
+        {% if p == 1 || p == total_pages || (p >= current_page - 2 && p <= current_page + 2) %}
+        {% if p == current_page %}
+        <span class="px-3 py-1.5 rounded-lg text-xs font-medium bg-accent/10 text-accent-light border border-accent/20">{{ p }}</span>
+        {% else %}
+        <a href="/ui/jobs?page={{ p }}{{ status_param }}{{ search_param }}{{ sort_param }}"
+           class="px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white hover:bg-white/5 border border-gray-800 transition-colors">{{ p }}</a>
+        {% endif %}
+        {% else if p == current_page - 3 || p == current_page + 3 %}
+        <span class="px-1 text-xs text-gray-600">&hellip;</span>
+        {% endif %}
+        {% endfor %}
+
+        <!-- Next -->
+        {% if current_page < total_pages %}
+        <a href="/ui/jobs?page={{ current_page + 1 }}{{ status_param }}{{ search_param }}{{ sort_param }}"
+           class="px-2.5 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white hover:bg-white/5 border border-gray-800 transition-colors">
+            Next
+        </a>
+        {% endif %}
+
+        <!-- Last -->
+        {% if current_page < total_pages - 1 %}
+        <a href="/ui/jobs?page={{ total_pages }}{{ status_param }}{{ search_param }}{{ sort_param }}"
+           class="px-2.5 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white hover:bg-white/5 border border-gray-800 transition-colors"
+           title="Last page">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+        </a>
+        {% endif %}
+
+        <!-- Jump-to form -->
+        <form method="get" action="/ui/jobs" class="ml-2 flex items-center gap-1">
+            {% if !current_status.is_empty() %}<input type="hidden" name="status" value="{{ current_status }}"/>{% endif %}
+            {% if !search_query.is_empty() %}<input type="hidden" name="search" value="{{ search_query }}"/>{% endif %}
+            <input type="hidden" name="sort" value="{{ sort_by }}"/>
+            <input type="hidden" name="dir" value="{{ sort_dir }}"/>
+            <input type="number" name="page" min="1" max="{{ total_pages }}" placeholder="#"
+                   class="w-14 rounded border border-gray-700 bg-surface px-2 py-1.5 text-xs text-white text-center focus:outline-none focus:ring-1 focus:ring-accent"/>
+            <button type="submit"
+                    class="px-2 py-1.5 text-xs rounded bg-accent/10 border border-accent/20 text-accent-light hover:bg-accent/20 transition-colors">Go</button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<script>
+function togglePanel(id) {
+    var el = document.getElementById(id);
+    var chevron = document.getElementById('cleanup-chevron');
+    if (el.classList.contains('hidden')) {
+        el.classList.remove('hidden');
+        if (chevron) chevron.style.transform = 'rotate(180deg)';
+    } else {
+        el.classList.add('hidden');
+        if (chevron) chevron.style.transform = '';
+    }
+}
+
+// Format dates as "10 Feb 2:01 PM" style with full timestamp tooltip
+(function() {
+    function formatDate(dateStr) {
+        try {
+            var d = new Date(dateStr);
+            if (isNaN(d.getTime())) return dateStr;
+            var day = d.getDate();
+            var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            var month = months[d.getMonth()];
+            var h = d.getHours();
+            var m = d.getMinutes();
+            var ampm = h >= 12 ? 'PM' : 'AM';
+            h = h % 12 || 12;
+            var mins = m < 10 ? '0' + m : m;
+            // Show year only if not current year
+            var yr = d.getFullYear() !== new Date().getFullYear() ? ' ' + d.getFullYear() : '';
+            return day + ' ' + month + yr + ' ' + h + ':' + mins + ' ' + ampm;
+        } catch(e) {
+            return dateStr;
+        }
+    }
+
+    function formatFull(dateStr) {
+        try {
+            var d = new Date(dateStr);
+            if (isNaN(d.getTime())) return dateStr;
+            return d.toLocaleString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric',
+                hour: '2-digit', minute: '2-digit', second: '2-digit'
+            });
+        } catch(e) {
+            return dateStr;
+        }
+    }
+
+    document.querySelectorAll('.time-ago').forEach(function(el) {
+        var ts = el.getAttribute('data-ts');
+        if (!ts) return;
+        el.textContent = formatDate(ts);
+        el.title = formatFull(ts);
+    });
+})();
+</script>
+{% endblock %}

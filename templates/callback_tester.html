@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% block title %}Callback Tester{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h2 class="text-2xl font-semibold text-white">Callback Tester</h2>
+    <p class="text-sm text-gray-500 mt-1">Test and simulate callback payloads to verify your webhook endpoint</p>
+</div>
+
+<!-- Current Callback Configuration -->
+<div class="mb-6 bg-surface-100 rounded-xl border border-gray-800/60 p-5">
+    <h3 class="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        Current Callback Configuration
+    </h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+        <div>
+            <p class="text-xs text-gray-500 mb-0.5">Base URL</p>
+            <p class="text-gray-300 font-mono text-xs break-all">{% if callback_base_url.is_empty() %}<span class="text-gray-600 italic">Not configured</span>{% else %}{{ callback_base_url }}{% endif %}</p>
+        </div>
+        <div>
+            <p class="text-xs text-gray-500 mb-0.5">Auth Type</p>
+            <p class="text-gray-300 text-xs">{{ callback_auth_type }}</p>
+        </div>
+        <div>
+            <p class="text-xs text-gray-500 mb-0.5">Auth Secret</p>
+            <p class="text-gray-300 text-xs font-mono">{% if callback_secret.is_empty() %}<span class="text-gray-600 italic">Not set</span>{% else %}{{ callback_secret_masked }}{% endif %}</p>
+        </div>
+        <div>
+            <p class="text-xs text-gray-500 mb-0.5">Output Path Prefix</p>
+            <p class="text-gray-300 text-xs font-mono">{% if output_path_prefix.is_empty() %}<span class="text-gray-600 italic">(root)</span>{% else %}{{ output_path_prefix }}/{% endif %}</p>
+        </div>
+    </div>
+    <div class="mt-3 text-right">
+        <a href="/ui/settings" class="text-xs text-accent-light hover:text-white transition-colors">Edit in Settings &rarr;</a>
+    </div>
+</div>
+
+<!-- Simulate Callback -->
+<div class="bg-surface-100 rounded-xl border border-gray-800/60 p-5">
+    <h3 class="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+        <svg class="w-4 h-4 text-accent-light" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+        </svg>
+        Simulate Callback
+    </h3>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Left: Form -->
+        <div class="space-y-4">
+            <div>
+                <label class="block text-xs font-medium text-gray-400 mb-1.5">Target URL <span class="text-gray-600">(where to send)</span></label>
+                <input type="text" id="cb-url"
+                       value="{{ callback_base_url }}"
+                       placeholder="https://your-server.com/api/webhook"
+                       class="w-full rounded-lg border border-gray-700 bg-surface px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors font-mono"/>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1.5">Video ID</label>
+                    <input type="number" id="cb-video-id" value="12345"
+                           class="w-full rounded-lg border border-gray-700 bg-surface px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors"/>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1.5">Status</label>
+                    <select id="cb-status"
+                            class="w-full rounded-lg border border-gray-700 bg-surface px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors">
+                        <option value="completed">completed</option>
+                        <option value="failed">failed</option>
+                    </select>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-xs font-medium text-gray-400 mb-1.5">Final M3U8 URL <span class="text-gray-600">(for completed)</span></label>
+                <input type="text" id="cb-m3u8"
+                       value="https://r2.example.com/{{ output_path_prefix }}{% if !output_path_prefix.is_empty() %}/{% endif %}products/12345/video/master.m3u8"
+                       class="w-full rounded-lg border border-gray-700 bg-surface px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors font-mono text-xs"/>
+            </div>
+
+            <div>
+                <label class="block text-xs font-medium text-gray-400 mb-1.5">Error Message <span class="text-gray-600">(for failed)</span></label>
+                <input type="text" id="cb-error" value=""
+                       placeholder="e.g. FFmpeg exited with code 1"
+                       class="w-full rounded-lg border border-gray-700 bg-surface px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors"/>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1.5">Duration (seconds)</label>
+                    <input type="number" id="cb-duration" value="120.5" step="0.1"
+                           class="w-full rounded-lg border border-gray-700 bg-surface px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors"/>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1.5">Attempt</label>
+                    <input type="number" id="cb-attempt" value="1" min="1"
+                           class="w-full rounded-lg border border-gray-700 bg-surface px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors"/>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3 pt-2">
+                <button onclick="sendCallback()" id="send-btn"
+                        class="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white hover:bg-accent-light transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    Send Test Callback
+                </button>
+                <button onclick="copyPayload()"
+                        class="inline-flex items-center gap-2 rounded-lg border border-gray-700 px-4 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>
+                    </svg>
+                    Copy cURL
+                </button>
+            </div>
+        </div>
+
+        <!-- Right: Live Preview + Response -->
+        <div class="space-y-4">
+            <div>
+                <p class="text-xs font-medium text-gray-400 mb-2">Payload Preview</p>
+                <pre id="payload-preview" class="text-xs bg-surface rounded-lg border border-gray-800/40 p-4 text-gray-300 overflow-x-auto max-h-64 overflow-y-auto"></pre>
+            </div>
+
+            <div id="response-section" class="hidden">
+                <p class="text-xs font-medium text-gray-400 mb-2">Response</p>
+                <div id="response-status" class="mb-2"></div>
+                <pre id="response-body" class="text-xs bg-surface rounded-lg border border-gray-800/40 p-4 text-gray-300 overflow-x-auto max-h-48 overflow-y-auto"></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function buildPayload() {
+    var status = document.getElementById('cb-status').value;
+    var payload = {
+        video_id: parseInt(document.getElementById('cb-video-id').value) || 12345,
+        status: status,
+        final_m3u8_url: status === 'completed' ? document.getElementById('cb-m3u8').value || null : null,
+        error_message: status === 'failed' ? (document.getElementById('cb-error').value || 'Simulated failure') : null,
+        started_at: new Date(Date.now() - 300000).toISOString(),
+        finished_at: new Date().toISOString(),
+        attempt: parseInt(document.getElementById('cb-attempt').value) || 1,
+        metadata: {
+            duration_seconds: parseFloat(document.getElementById('cb-duration').value) || 0,
+            renditions: ["360p", "720p", "1080p"]
+        }
+    };
+    return payload;
+}
+
+function updatePreview() {
+    document.getElementById('payload-preview').textContent = JSON.stringify(buildPayload(), null, 2);
+}
+
+async function sendCallback() {
+    var url = document.getElementById('cb-url').value.trim();
+    if (!url) { alert('Please enter a target URL'); return; }
+
+    var btn = document.getElementById('send-btn');
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+
+    var payload = buildPayload();
+
+    try {
+        var headers = { 'Content-Type': 'application/json' };
+        // Use the internal proxy endpoint to avoid CORS issues
+        var resp = await fetch('/ui/callback-tester/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: url, payload: payload })
+        });
+        var data = await resp.json();
+
+        document.getElementById('response-section').classList.remove('hidden');
+        if (data.success) {
+            document.getElementById('response-status').innerHTML =
+                '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">' +
+                '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> HTTP ' + data.status_code + '</span>' +
+                '<span class="ml-2 text-xs text-gray-500">' + data.elapsed_ms + 'ms</span>';
+        } else {
+            document.getElementById('response-status').innerHTML =
+                '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20">' +
+                '<span class="w-1.5 h-1.5 rounded-full bg-red-400"></span> ' + (data.error || 'Failed') + '</span>';
+        }
+        document.getElementById('response-body').textContent = data.body || '(empty)';
+    } catch(e) {
+        document.getElementById('response-section').classList.remove('hidden');
+        document.getElementById('response-status').innerHTML =
+            '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20">Network Error</span>';
+        document.getElementById('response-body').textContent = e.message;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> Send Test Callback';
+    }
+}
+
+function copyPayload() {
+    var url = document.getElementById('cb-url').value.trim() || 'https://your-server.com/webhook';
+    var payload = JSON.stringify(buildPayload());
+    var curl = 'curl -X POST ' + url + " \\\n  -H 'Content-Type: application/json' \\\n  -d '" + payload + "'";
+    navigator.clipboard.writeText(curl).then(function() {
+        alert('cURL command copied to clipboard!');
+    });
+}
+
+// Live preview on any input change
+document.querySelectorAll('#cb-url, #cb-video-id, #cb-status, #cb-m3u8, #cb-error, #cb-duration, #cb-attempt').forEach(function(el) {
+    el.addEventListener('input', updatePreview);
+    el.addEventListener('change', updatePreview);
+});
+updatePreview();
+</script>
+{% endblock %}

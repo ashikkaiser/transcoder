@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}Workers{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h2 class="text-2xl font-semibold text-white">Workers</h2>
+    <p class="text-sm text-gray-500 mt-1">Real-time worker pool status</p>
+</div>
+
+<!-- Summary cards -->
+<div id="workers-content"
+     hx-get="/ui/partials/workers"
+     hx-trigger="every 2s"
+     hx-swap="innerHTML">
+    {% include "_workers.html" %}
+</div>
+{% endblock %}

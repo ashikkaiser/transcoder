@@ -1,0 +1,69 @@
+<!-- Summary stats row -->
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+    <div class="bg-surface-100 rounded-xl border border-gray-800/60 p-4">
+        <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Workers</p>
+        <p class="text-2xl font-semibold text-white mt-1">{{ summary.total }}</p>
+    </div>
+    <div class="bg-surface-100 rounded-xl border border-gray-800/60 p-4">
+        <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Active</p>
+        <p class="text-2xl font-semibold text-emerald-400 mt-1">{{ summary.active }}</p>
+    </div>
+    <div class="bg-surface-100 rounded-xl border border-gray-800/60 p-4">
+        <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Idle</p>
+        <p class="text-2xl font-semibold text-gray-400 mt-1">{{ summary.idle }}</p>
+    </div>
+    <div class="bg-surface-100 rounded-xl border border-gray-800/60 p-4">
+        <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Processing Time</p>
+        <p class="text-2xl font-semibold text-white mt-1">{{ summary.overall_avg_secs }}</p>
+    </div>
+</div>
+
+<!-- Worker cards -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    {% for w in workers %}
+    <div class="bg-surface-100 rounded-xl border border-gray-800/60 p-5 transition-all hover:border-gray-700">
+        <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg bg-surface-200 flex items-center justify-center">
+                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                              d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h4 class="text-sm font-semibold text-white">{{ w.id }}</h4>
+                    <p class="text-xs text-gray-500">{{ w.jobs_completed }} jobs completed</p>
+                </div>
+            </div>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border {{ w.status_class }}">
+                <span class="w-1.5 h-1.5 rounded-full {{ w.status_dot }}"></span>
+                {{ w.status }}
+            </span>
+        </div>
+
+        <div class="space-y-2.5 text-sm">
+            <div class="flex justify-between">
+                <span class="text-gray-500">Current Job</span>
+                <span class="text-gray-300 font-mono text-xs">{{ w.current_job_id }}</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-gray-500">Video ID</span>
+                <span class="text-gray-300">{{ w.current_video_id }}</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-gray-500">Elapsed</span>
+                <span class="text-gray-300">{{ w.current_duration }}</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-gray-500">Avg Time / Job</span>
+                <span class="text-gray-300">{{ w.avg_processing }}</span>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Overall stats -->
+<div class="mt-6 text-center text-xs text-gray-600">
+    Total jobs processed since boot: {{ summary.total_jobs_completed }}
+</div>

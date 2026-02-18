@@ -1,0 +1,537 @@
+{% extends "base.html" %}
+
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h2 class="text-2xl font-semibold text-white">Settings</h2>
+    <p class="text-sm text-gray-500 mt-1">Runtime configuration — changes take effect immediately</p>
+</div>
+
+<form method="post" action="/ui/settings" id="settings-form" class="space-y-8 max-w-2xl">
+    <!-- Hidden field: JS will fill this with comma-separated checked renditions -->
+    <input type="hidden" name="enabled_renditions" id="enabled-renditions" value=""/>
+
+    <!-- Rendition Presets -->
+    <div class="bg-surface-100 rounded-xl border border-gray-800/60 p-6">
+        <h3 class="text-lg font-medium text-white mb-1">FFmpeg Renditions</h3>
+        <p class="text-sm text-gray-500 mb-5">Choose which quality levels to transcode. At least one must be enabled.</p>
+
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {% for r in renditions %}
+            <label class="rendition-label relative flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all
+                          {% if r.enabled %}border-accent/40 bg-accent/5{% else %}border-gray-700 bg-surface hover:border-gray-600{% endif %}">
+                <input type="checkbox" data-rendition="{{ r.name }}"
+                       {% if r.enabled %}checked{% endif %}
+                       onchange="updateRenditionStyle(this)"
+                       class="mt-0.5 rounded border-gray-600 bg-surface text-accent focus:ring-accent focus:ring-offset-0"/>
+                <div>
+                    <p class="text-sm font-semibold text-white">{{ r.name }}</p>
+                    <p class="text-[11px] text-gray-500">{{ r.width }}x{{ r.height }}</p>
+                    <p class="text-[11px] text-gray-500">{{ r.video_bitrate }} video &middot; {{ r.audio_bitrate }} audio</p>
+                </div>
+            </label>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Hardware Acceleration -->
+    <div class="bg-surface-100 rounded-xl border border-gray-800/60 p-6">
+        <h3 class="text-lg font-medium text-white mb-1">Video Encoder / GPU Acceleration</h3>
+        <p class="text-sm text-gray-500 mb-5">Choose how video encoding is performed. GPU encoding is significantly faster but may vary in quality.</p>
+
+        <div class="space-y-2">
+            {% for m in hw_accel_modes %}
+            <label class="hw-label relative flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all
+                          {% if m.selected %}border-accent/40 bg-accent/5{% else %}border-gray-700 bg-surface hover:border-gray-600{% endif %}
+                          {% if !m.available %}opacity-50{% endif %}">
+                <input type="radio" name="hw_accel" value="{{ m.value }}"
+                       {% if m.selected %}checked{% endif %}
+                       {% if !m.available %}disabled{% endif %}
+                       onchange="updateHwStyle()"
+                       class="mt-0 rounded-full border-gray-600 bg-surface text-accent focus:ring-accent focus:ring-offset-0"/>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                        <p class="text-sm font-medium text-white">{{ m.label }}</p>
+                        {% if !m.available %}
+                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-400 border border-red-500/20">Not Available</span>
+                        {% else if m.value != "cpu" && m.value != "auto" %}
+                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            <svg class="w-2.5 h-2.5 mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
+                            GPU
+                        </span>
+                        {% endif %}
+                    </div>
+                </div>
+            </label>
+            {% endfor %}
+        </div>
+
+        {% if ffmpeg.is_ready() %}
+        <div class="mt-4 flex items-center gap-2 text-xs text-gray-500">
+            <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+            </svg>
+            <span>FFmpeg v{{ ffmpeg.ffmpeg_version }} detected &mdash; {{ ffmpeg.encoders.len() }} encoders, {{ ffmpeg.hw_accels.len() }} HW accel backend(s)</span>
+        </div>
+        {% else %}
+        <div class="mt-4 flex items-center gap-2 text-xs text-red-400">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01"/>
+            </svg>
+            <span>FFmpeg is not installed. Only CPU mode will be available once installed.</span>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Worker Configuration -->
+    <div class="bg-surface-100 rounded-xl border border-gray-800/60 p-6">
+        <h3 class="text-lg font-medium text-white mb-1">Worker Pool</h3>
+        <p class="text-sm text-gray-500 mb-5">Control how many parallel workers process transcoding jobs</p>
+
+        <!-- Auto-Scale Toggle -->
+        <div class="mb-5">
+            <label class="relative flex items-center justify-between gap-4 p-3 rounded-lg border cursor-pointer transition-all
+                          {% if settings.auto_scale %}border-accent/40 bg-accent/5{% else %}border-gray-700 bg-surface hover:border-gray-600{% endif %}"
+                   id="autoscale-label">
+                <div>
+                    <p class="text-sm font-medium text-white">Auto-Scale Workers</p>
+                    <p class="text-xs text-gray-500 mt-0.5">Automatically adjust worker count based on queue depth, CPU, and memory usage</p>
+                </div>
+                <input type="checkbox" name="auto_scale" value="on"
+                       {% if settings.auto_scale %}checked{% endif %}
+                       onchange="toggleAutoScale()"
+                       class="rounded border-gray-600 bg-surface text-accent focus:ring-accent focus:ring-offset-0 h-5 w-5"/>
+            </label>
+        </div>
+
+        <!-- Manual Concurrency (shown when auto-scale is OFF) -->
+        <div id="manual-workers" {% if settings.auto_scale %}class="hidden"{% endif %}>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Worker Concurrency</label>
+            <div class="flex items-center gap-4">
+                <input type="number" name="worker_concurrency" value="{{ settings.worker_concurrency }}"
+                       min="1" max="32"
+                       class="w-32 rounded-lg border border-gray-700 bg-surface py-2.5 px-4 text-sm text-white focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"/>
+                <span class="text-xs text-gray-500">Current: {{ settings.worker_concurrency }} worker(s)</span>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Fixed number of parallel transcoding workers.</p>
+        </div>
+
+        <!-- Auto-Scale Options (shown when auto-scale is ON) -->
+        <div id="autoscale-options" {% if !settings.auto_scale %}class="hidden"{% endif %}>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1.5">CPU Threshold (%)</label>
+                    <input type="number" name="auto_scale_cpu_threshold"
+                           value="{{ "{:.0}"|format(settings.auto_scale_cpu_threshold) }}"
+                           min="10" max="100" step="5"
+                           class="w-full rounded-lg border border-gray-700 bg-surface py-2.5 px-4 text-sm text-white focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"/>
+                    <p class="mt-1 text-xs text-gray-500">Won't scale up if system CPU exceeds this</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1.5">Memory Threshold (%)</label>
+                    <input type="number" name="auto_scale_mem_threshold"
+                           value="{{ "{:.0}"|format(settings.auto_scale_mem_threshold) }}"
+                           min="10" max="100" step="5"
+                           class="w-full rounded-lg border border-gray-700 bg-surface py-2.5 px-4 text-sm text-white focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"/>
+                    <p class="mt-1 text-xs text-gray-500">Won't scale up if memory usage exceeds this</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1.5">Min Workers <span class="text-gray-500 font-normal">(optional)</span></label>
+                    <input type="number" name="auto_scale_min"
+                           value="{{ settings.auto_scale_min }}"
+                           min="1" max="32"
+                           class="w-full rounded-lg border border-gray-700 bg-surface py-2.5 px-4 text-sm text-white focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"/>
+                    <p class="mt-1 text-xs text-gray-500">Always keep at least this many workers</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1.5">Max Workers <span class="text-gray-500 font-normal">(optional)</span></label>
+                    <input type="number" name="auto_scale_max"
+                           value="{{ settings.auto_scale_max }}"
+                           min="1" max="64"
+                           class="w-full rounded-lg border border-gray-700 bg-surface py-2.5 px-4 text-sm text-white focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"/>
+                    <p class="mt-1 text-xs text-gray-500">Never exceed this many workers (defaults to CPU cores)</p>
+                </div>
+            </div>
+            <div class="mt-3 p-3 rounded-lg border border-gray-800/40 bg-surface">
+                <p class="text-xs text-gray-500">
+                    <svg class="inline w-3.5 h-3.5 mr-1 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    The auto-scaler checks every 10s. It scales up when jobs are queued and resources are available, and scales down when workers are idle. A 30s cooldown prevents rapid fluctuations.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Output Path Configuration -->
+    <div class="bg-surface-100 rounded-xl border border-gray-800/60 p-6">
+        <h3 class="text-lg font-medium text-white mb-1">Output Path</h3>
+        <p class="text-sm text-gray-500 mb-5">Base prefix for HLS output in R2/S3. The rest of the path follows the original s3_key segments.</p>
+
+        <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Output Path Prefix</label>
+            <input type="text" name="output_path_prefix" id="output-prefix-input"
+                   value="{{ settings.output_path_prefix }}"
+                   placeholder="hls"
+                   oninput="updatePathPreview()"
+                   class="w-full max-w-md rounded-lg border border-gray-700 bg-surface py-2.5 px-4 text-sm text-white placeholder-gray-500 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"/>
+            <div class="mt-3 rounded-lg border border-gray-800/40 bg-surface p-3">
+                <p class="text-[11px] text-gray-500 mb-1.5">Live preview &mdash; s3_key: <code class="text-gray-400">products/123/video.mp4</code></p>
+                <p class="text-xs font-mono text-accent-light" id="path-preview"></p>
+            </div>
+            <p class="mt-2 text-xs text-gray-500">
+                Leave empty or <code class="text-gray-400">/</code> to upload directly under the s3_key path (no prefix).
+            </p>
+        </div>
+    </div>
+
+    <!-- Callback Configuration -->
+    <div class="bg-surface-100 rounded-xl border border-gray-800/60 p-6">
+        <h3 class="text-lg font-medium text-white mb-1">Callback Configuration</h3>
+        <p class="text-sm text-gray-500 mb-5">How the service authenticates when hitting your callback URLs</p>
+
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1.5">Callback Base URL</label>
+                <input type="text" name="callback_base_url" value="{{ settings.callback_base_url }}"
+                       placeholder="https://api.example.com"
+                       class="w-full rounded-lg border border-gray-700 bg-surface py-2.5 px-4 text-sm text-white placeholder-gray-500 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"/>
+                <p class="mt-1 text-xs text-gray-500">Base URL prepended to relative callback paths</p>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1.5">Auth Type</label>
+                <select name="callback_auth_type"
+                        class="w-full rounded-lg border border-gray-700 bg-surface py-2.5 px-4 text-sm text-white focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors">
+                    <option value="none" {% if settings.callback_auth_type.as_str() == "none" %}selected{% endif %}>None</option>
+                    <option value="bearer_token" {% if settings.callback_auth_type.as_str() == "bearer_token" %}selected{% endif %}>Bearer Token (Authorization: Bearer ...)</option>
+                    <option value="api_key" {% if settings.callback_auth_type.as_str() == "api_key" %}selected{% endif %}>API Key (X-API-Key: ...)</option>
+                </select>
+                <p class="mt-1 text-xs text-gray-500">How the secret is sent in callback HTTP requests</p>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1.5">Secret / Token</label>
+                <div class="relative">
+                    <input type="password" name="callback_secret" value="{{ settings.callback_secret }}"
+                           placeholder="Enter your API key or bearer token"
+                           id="secret-input"
+                           class="w-full rounded-lg border border-gray-700 bg-surface py-2.5 px-4 pr-12 text-sm text-white placeholder-gray-500 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"/>
+                    <button type="button" onclick="toggleSecret()"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                        </svg>
+                    </button>
+                </div>
+                <p class="mt-1 text-xs text-gray-500">Sent with every callback request. Leave blank for no auth.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Job Configuration -->
+    <div class="bg-surface-100 rounded-xl border border-gray-800/60 p-6">
+        <h3 class="text-lg font-medium text-white mb-1">Job Configuration</h3>
+        <p class="text-sm text-gray-500 mb-5">Processing behavior settings</p>
+
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1.5">Max Job Attempts</label>
+                <input type="number" name="max_job_attempts" value="{{ settings.max_job_attempts }}"
+                       min="1" max="20"
+                       class="w-32 rounded-lg border border-gray-700 bg-surface py-2.5 px-4 text-sm text-white focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"/>
+                <p class="mt-1 text-xs text-gray-500">Maximum retry attempts before a job is marked as permanently failed</p>
+            </div>
+
+            <!-- Delete source after transcode -->
+            <div>
+                <label class="relative flex items-center justify-between gap-4 p-3 rounded-lg border cursor-pointer transition-all
+                              {% if settings.delete_source_after_transcode %}border-amber-500/40 bg-amber-500/5{% else %}border-gray-700 bg-surface hover:border-gray-600{% endif %}"
+                       id="delete-source-label">
+                    <div>
+                        <p class="text-sm font-medium text-white">Delete Source File After Transcode</p>
+                        <p class="text-xs text-gray-500 mt-0.5">Remove the original MP4 from R2/S3 after a successful transcode and callback</p>
+                    </div>
+                    <input type="checkbox" name="delete_source_after_transcode" value="on"
+                           {% if settings.delete_source_after_transcode %}checked{% endif %}
+                           onchange="toggleDeleteSource()"
+                           class="rounded border-gray-600 bg-surface text-amber-500 focus:ring-amber-500 focus:ring-offset-0 h-5 w-5"/>
+                </label>
+                {% if settings.delete_source_after_transcode %}
+                <div class="mt-2 flex items-center gap-2 text-amber-400 text-xs">
+                    <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/>
+                    </svg>
+                    <span>Source files will be <strong>permanently deleted</strong> from R2 after successful transcoding.</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Poll / Pull Mode -->
+    <div class="bg-surface-100 rounded-xl border border-gray-800/60 p-6">
+        <h3 class="text-lg font-medium text-white mb-1">Poll Mode (Pull Pending Videos)</h3>
+        <p class="text-sm text-gray-500 mb-5">Periodically call an external API to fetch pending videos for transcoding</p>
+
+        <!-- Enable Toggle -->
+        <div class="mb-5">
+            <label class="relative flex items-center justify-between gap-4 p-3 rounded-lg border cursor-pointer transition-all
+                          {% if settings.poll_enabled %}border-accent/40 bg-accent/5{% else %}border-gray-700 bg-surface hover:border-gray-600{% endif %}"
+                   id="poll-label">
+                <div>
+                    <p class="text-sm font-medium text-white">Enable Polling</p>
+                    <p class="text-xs text-gray-500 mt-0.5">When enabled, the service will periodically call the endpoint below to discover new videos</p>
+                </div>
+                <input type="checkbox" name="poll_enabled" value="on"
+                       {% if settings.poll_enabled %}checked{% endif %}
+                       onchange="togglePoll()"
+                       class="rounded border-gray-600 bg-surface text-accent focus:ring-accent focus:ring-offset-0 h-5 w-5"/>
+            </label>
+        </div>
+
+        <!-- Poll Options (shown when enabled) -->
+        <div id="poll-options" {% if !settings.poll_enabled %}class="hidden"{% endif %}>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1.5">Poll Endpoint URL</label>
+                    <input type="text" name="poll_endpoint" value="{{ settings.poll_endpoint }}"
+                           placeholder="https://api.example.com/pending-videos"
+                           class="w-full rounded-lg border border-gray-700 bg-surface py-2.5 px-4 text-sm text-white placeholder-gray-500 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"/>
+                    <p class="mt-1 text-xs text-gray-500">
+                        Must return JSON: <code class="text-gray-400">{ "data": [{ "id": 123, "s3_key": "...", "video_url": "...", "callback_url": "..." }] }</code>
+                    </p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1.5">Poll Interval (seconds)</label>
+                    <input type="number" name="poll_interval_secs" value="{{ settings.poll_interval_secs }}"
+                           min="5" max="3600"
+                           class="w-32 rounded-lg border border-gray-700 bg-surface py-2.5 px-4 text-sm text-white focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"/>
+                    <p class="mt-1 text-xs text-gray-500">How often to check the endpoint for new videos (minimum 5 seconds)</p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1.5">Auth Type</label>
+                    <select name="poll_auth_type"
+                            class="w-full rounded-lg border border-gray-700 bg-surface py-2.5 px-4 text-sm text-white focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors">
+                        <option value="none" {% if settings.poll_auth_type.as_str() == "none" %}selected{% endif %}>None</option>
+                        <option value="bearer_token" {% if settings.poll_auth_type.as_str() == "bearer_token" %}selected{% endif %}>Bearer Token (Authorization: Bearer ...)</option>
+                        <option value="api_key" {% if settings.poll_auth_type.as_str() == "api_key" %}selected{% endif %}>API Key (X-API-Key: ...)</option>
+                    </select>
+                    <p class="mt-1 text-xs text-gray-500">How to authenticate when calling the poll endpoint</p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1.5">Auth Secret / Token</label>
+                    <div class="relative">
+                        <input type="password" name="poll_auth_secret" value="{{ settings.poll_auth_secret }}"
+                               placeholder="Enter API key or bearer token for the poll endpoint"
+                               id="poll-secret-input"
+                               class="w-full rounded-lg border border-gray-700 bg-surface py-2.5 px-4 pr-12 text-sm text-white placeholder-gray-500 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"/>
+                        <button type="button" onclick="togglePollSecret()"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <p class="mt-1 text-xs text-gray-500">Leave blank if the endpoint requires no authentication</p>
+                </div>
+            </div>
+
+            <div class="mt-4 p-3 rounded-lg border border-gray-800/40 bg-surface">
+                <p class="text-xs text-gray-500">
+                    <svg class="inline w-3.5 h-3.5 mr-1 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    The poller sends a GET request to the endpoint. Duplicate video IDs are handled idempotently &mdash; existing active jobs won't be duplicated. Both push (API) and pull (poll) modes can run simultaneously.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- API Authentication -->
+    <div class="bg-surface-100 rounded-xl border border-gray-800/60 p-6">
+        <h3 class="text-lg font-medium text-white mb-1">API Authentication</h3>
+        <p class="text-sm text-gray-500 mb-5">Protect machine-to-machine API routes (<code class="text-xs text-gray-400">/transcode</code>, <code class="text-xs text-gray-400">/transcode/cancel</code>, etc.)</p>
+
+        <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">API Key</label>
+            <div class="relative">
+                <input type="password" name="api_key" value="{{ settings.api_key }}" id="api-key-input"
+                       placeholder="Leave empty for open access (dev mode)"
+                       class="w-full rounded-lg border border-gray-700 bg-surface py-2.5 px-4 pr-12 text-sm text-white placeholder-gray-500 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"/>
+                <button type="button" onclick="toggleApiKey()"
+                        class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                    </svg>
+                </button>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Clients send this as <code class="text-gray-400">X-API-Key</code> or <code class="text-gray-400">Authorization: Bearer &lt;key&gt;</code>. Empty = open access.</p>
+            {% if settings.api_key.is_empty() %}
+            <div class="mt-2 flex items-center gap-2 text-amber-400 text-xs">
+                <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/>
+                </svg>
+                <span>API routes are currently <strong>unprotected</strong>. Set a key for production.</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Admin Credentials -->
+    <div class="bg-surface-100 rounded-xl border border-gray-800/60 p-6">
+        <h3 class="text-lg font-medium text-white mb-1">Admin Credentials</h3>
+        <p class="text-sm text-gray-500 mb-5">Change the login username and password for this panel</p>
+
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1.5">Username</label>
+                <input type="text" name="admin_username" value="{{ settings.admin_username }}"
+                       class="w-full rounded-lg border border-gray-700 bg-surface py-2.5 px-4 text-sm text-white focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"/>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
+                <input type="password" name="admin_password" value="{{ settings.admin_password }}"
+                       class="w-full rounded-lg border border-gray-700 bg-surface py-2.5 px-4 text-sm text-white focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"/>
+            </div>
+        </div>
+    </div>
+
+    <!-- Submit -->
+    <div class="flex items-center gap-4">
+        <button type="submit"
+                class="inline-flex items-center gap-2 rounded-lg bg-accent px-6 py-2.5 text-sm font-medium text-white hover:bg-accent-light transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+            </svg>
+            Save Settings
+        </button>
+        <span class="text-xs text-gray-500">Changes apply immediately and persist across restarts</span>
+    </div>
+</form>
+
+<script>
+// Collect checked renditions into the hidden field before submit
+document.getElementById('settings-form').addEventListener('submit', function() {
+    var checked = [];
+    document.querySelectorAll('[data-rendition]').forEach(function(cb) {
+        if (cb.checked) checked.push(cb.dataset.rendition);
+    });
+    document.getElementById('enabled-renditions').value = checked.join(',');
+});
+
+// Toggle visual style on checkbox change
+function updateRenditionStyle(cb) {
+    var label = cb.closest('.rendition-label');
+    if (cb.checked) {
+        label.classList.remove('border-gray-700', 'bg-surface', 'hover:border-gray-600');
+        label.classList.add('border-accent/40', 'bg-accent/5');
+    } else {
+        label.classList.remove('border-accent/40', 'bg-accent/5');
+        label.classList.add('border-gray-700', 'bg-surface', 'hover:border-gray-600');
+    }
+}
+
+function toggleSecret() {
+    var input = document.getElementById('secret-input');
+    input.type = input.type === 'password' ? 'text' : 'password';
+}
+
+function toggleApiKey() {
+    var input = document.getElementById('api-key-input');
+    input.type = input.type === 'password' ? 'text' : 'password';
+}
+
+// Toggle HW accel radio visual style
+function updateHwStyle() {
+    document.querySelectorAll('.hw-label').forEach(function(label) {
+        var radio = label.querySelector('input[type="radio"]');
+        if (radio && radio.checked) {
+            label.classList.remove('border-gray-700', 'bg-surface', 'hover:border-gray-600');
+            label.classList.add('border-accent/40', 'bg-accent/5');
+        } else {
+            label.classList.remove('border-accent/40', 'bg-accent/5');
+            label.classList.add('border-gray-700', 'bg-surface', 'hover:border-gray-600');
+        }
+    });
+}
+
+// Live path preview for output prefix
+function updatePathPreview() {
+    var raw = document.getElementById('output-prefix-input').value;
+    // Trim slashes like the backend does
+    var prefix = raw.replace(/^\/+|\/+$/g, '');
+    var sample = 'products/123/video';
+    var el = document.getElementById('path-preview');
+    if (prefix === '' || prefix === '.' || prefix === '/') {
+        el.textContent = sample + '/master.m3u8';
+    } else {
+        el.textContent = prefix + '/' + sample + '/master.m3u8';
+    }
+}
+// Run once on page load
+updatePathPreview();
+
+// Delete source toggle — visual style
+function toggleDeleteSource() {
+    var cb = document.querySelector('input[name="delete_source_after_transcode"]');
+    var label = document.getElementById('delete-source-label');
+    if (cb.checked) {
+        label.classList.remove('border-gray-700', 'bg-surface', 'hover:border-gray-600');
+        label.classList.add('border-amber-500/40', 'bg-amber-500/5');
+    } else {
+        label.classList.remove('border-amber-500/40', 'bg-amber-500/5');
+        label.classList.add('border-gray-700', 'bg-surface', 'hover:border-gray-600');
+    }
+}
+
+// Poll toggle — show/hide options
+function togglePoll() {
+    var cb = document.querySelector('input[name="poll_enabled"]');
+    var options = document.getElementById('poll-options');
+    var label = document.getElementById('poll-label');
+    if (cb.checked) {
+        options.classList.remove('hidden');
+        label.classList.remove('border-gray-700', 'bg-surface', 'hover:border-gray-600');
+        label.classList.add('border-accent/40', 'bg-accent/5');
+    } else {
+        options.classList.add('hidden');
+        label.classList.remove('border-accent/40', 'bg-accent/5');
+        label.classList.add('border-gray-700', 'bg-surface', 'hover:border-gray-600');
+    }
+}
+
+function togglePollSecret() {
+    var input = document.getElementById('poll-secret-input');
+    input.type = input.type === 'password' ? 'text' : 'password';
+}
+
+// Auto-scale toggle — show/hide sections
+function toggleAutoScale() {
+    var cb = document.querySelector('input[name="auto_scale"]');
+    var manual = document.getElementById('manual-workers');
+    var options = document.getElementById('autoscale-options');
+    var label = document.getElementById('autoscale-label');
+    if (cb.checked) {
+        manual.classList.add('hidden');
+        options.classList.remove('hidden');
+        label.classList.remove('border-gray-700', 'bg-surface', 'hover:border-gray-600');
+        label.classList.add('border-accent/40', 'bg-accent/5');
+    } else {
+        manual.classList.remove('hidden');
+        options.classList.add('hidden');
+        label.classList.remove('border-accent/40', 'bg-accent/5');
+        label.classList.add('border-gray-700', 'bg-surface', 'hover:border-gray-600');
+    }
+}
+</script>
+{% endblock %}

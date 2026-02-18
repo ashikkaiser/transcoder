@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block title %}Job Detail{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <a href="/ui/jobs" class="text-sm text-gray-500 hover:text-gray-300 transition-colors">&larr; Back to Jobs</a>
+</div>
+
+<!-- Job header -->
+<div class="bg-surface-100 rounded-xl border border-gray-800/60 p-6 mb-6">
+    <div class="flex items-start justify-between mb-4">
+        <div>
+            <h2 class="text-2xl font-semibold text-white">Video {{ job.video_id }}</h2>
+            <p class="text-xs font-mono text-gray-500 mt-1">Job ID: {{ job.id }}</p>
+        </div>
+        <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wide
+            {% if job.status == "completed" %}bg-emerald-500/10 text-emerald-400 border border-emerald-500/20
+            {% else if job.status == "failed" %}bg-red-500/10 text-red-400 border border-red-500/20
+            {% else if job.status == "canceled" %}bg-gray-500/10 text-gray-400 border border-gray-500/20
+            {% else if job.status == "queued" %}bg-yellow-500/10 text-yellow-400 border border-yellow-500/20
+            {% else %}bg-blue-500/10 text-blue-400 border border-blue-500/20{% endif %}">
+            {% if job.status == "downloading" || job.status == "transcoding" || job.status == "uploading" %}
+            <span class="w-1.5 h-1.5 rounded-full bg-blue-400 status-pulse"></span>
+            {% endif %}
+            {{ job.status }}
+        </span>
+    </div>
+
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div>
+            <p class="text-xs text-gray-500 mb-1">Attempt</p>
+            <p class="text-sm text-gray-200">{{ job.attempt }} / {{ job.max_attempts }}</p>
+        </div>
+        <div>
+            <p class="text-xs text-gray-500 mb-1">Created</p>
+            <p class="text-sm text-gray-200">{{ job.created_at }}</p>
+        </div>
+        <div>
+            <p class="text-xs text-gray-500 mb-1">Updated</p>
+            <p class="text-sm text-gray-200">{{ job.updated_at }}</p>
+        </div>
+        <div>
+            <p class="text-xs text-gray-500 mb-1">S3 Key</p>
+            <p class="text-sm text-gray-200 break-all">{{ job.s3_key }}</p>
+        </div>
+    </div>
+
+    {% match job.final_m3u8_url %}
+    {% when Some with (url) %}
+    <div class="mt-4 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+        <p class="text-xs text-gray-500 mb-1">Output URL</p>
+        <a href="{{ url }}" target="_blank" class="text-sm text-accent-light hover:text-white break-all transition-colors">{{ url }}</a>
+    </div>
+    {% when None %}
+    {% endmatch %}
+
+    {% match job.last_error %}
+    {% when Some with (err) %}
+    <div class="mt-4 p-3 rounded-lg bg-red-500/5 border border-red-500/10">
+        <p class="text-xs text-gray-500 mb-1">Last Error</p>
+        <p class="text-sm text-red-400">{{ err }}</p>
+    </div>
+    {% when None %}
+    {% endmatch %}
+
+    {% match job.cancel_reason %}
+    {% when Some with (reason) %}
+    <div class="mt-4 p-3 rounded-lg bg-gray-500/5 border border-gray-500/10">
+        <p class="text-xs text-gray-500 mb-1">Cancel Reason</p>
+        <p class="text-sm text-gray-400">{{ reason }}</p>
+    </div>
+    {% when None %}
+    {% endmatch %}
+</div>
+
+<!-- Live Progress (auto-refreshes while active) -->
+{% match progress %}
+{% when Some with (p) %}
+<div class="bg-surface-100 rounded-xl border border-gray-800/60 p-6 mb-6"
+     hx-get="/ui/jobs/{{ job.id }}" hx-trigger="every 2s" hx-select="#progress-panel" hx-target="#progress-panel" hx-swap="outerHTML">
+    <div id="progress-panel">
+        <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-blue-400 status-pulse"></span>
+                <h3 class="text-sm font-semibold text-white">
+                    {% if p.phase == "downloading" %}Downloading…
+                    {% else if p.phase == "uploading" %}Uploading to R2…
+                    {% else if p.phase == "callback" %}Sending callback…
+                    {% else %}Transcoding — {{ p.current_rendition }} ({{ p.rendition_index + 1 }}/{{ p.total_renditions }}){% endif %}
+                </h3>
+            </div>
+            <span class="text-sm font-mono text-accent-light">{{ "{:.0}"|format(p.overall_pct) }}%</span>
+        </div>
+        <!-- Overall progress bar -->
+        <div class="w-full h-2 rounded-full bg-gray-800 overflow-hidden">
+            <div class="h-full rounded-full bg-gradient-to-r from-accent to-blue-400 transition-all duration-500"
+                 style="width: {{ "{:.0}"|format(p.overall_pct) }}%"></div>
+        </div>
+        {% if !p.speed.is_empty() && p.phase == "transcoding" %}
+        <div class="flex items-center justify-between mt-2 text-xs text-gray-500">
+            <span>Rendition: {{ "{:.0}"|format(p.rendition_pct) }}%</span>
+            <span>Speed: {{ p.speed }}</span>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% when None %}
+{% endmatch %}
+
+<!-- Action buttons -->
+<div class="mb-6 flex flex-wrap items-center gap-3">
+    {% if job.status != "completed" && job.status != "canceled" && job.status != "failed" %}
+    <form method="post" action="/ui/jobs/{{ job.video_id }}/cancel"
+          onsubmit="return confirm('Cancel this job?')">
+        <button type="submit"
+                class="inline-flex items-center gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-500/20 transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+            Cancel Job
+        </button>
+    </form>
+    {% endif %}
+
+    {% if job.status == "failed" %}
+    <form method="post" action="/ui/jobs/{{ job.id }}/retry"
+          onsubmit="return confirm('Retry this failed job?')">
+        <button type="submit"
+                class="inline-flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-4 py-2 text-sm font-medium text-amber-400 hover:bg-amber-500/20 transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            Retry Job
+        </button>
+    </form>
+    {% endif %}
+
+    {% if job.status == "completed" || job.status == "failed" || job.status == "canceled" %}
+    <form method="post" action="/ui/jobs/{{ job.id }}/delete"
+          onsubmit="return confirm('Permanently delete this job and its event history? This cannot be undone.')">
+        <button type="submit"
+                class="inline-flex items-center gap-2 rounded-lg bg-gray-500/10 border border-gray-700 px-4 py-2 text-sm font-medium text-gray-400 hover:text-red-400 hover:border-red-500/20 hover:bg-red-500/10 transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+            Delete Job
+        </button>
+    </form>
+    {% endif %}
+</div>
+
+<!-- Event timeline -->
+<div class="bg-surface-100 rounded-xl border border-gray-800/60 p-6">
+    <h3 class="text-lg font-semibold text-white mb-4">Event Timeline</h3>
+
+    {% if events.is_empty() %}
+    <p class="text-sm text-gray-500">No events recorded yet.</p>
+    {% else %}
+    <div class="space-y-0">
+        {% for event in events %}
+        <div class="flex gap-4 relative">
+            <!-- Timeline line -->
+            {% if !loop.last %}
+            <div class="absolute left-[11px] top-6 bottom-0 w-px bg-gray-800"></div>
+            {% endif %}
+
+            <!-- Dot -->
+            <div class="relative z-10 mt-1.5">
+                <div class="w-[23px] h-[23px] rounded-full border-2 flex items-center justify-center {{ event.dot_border }}">
+                    <div class="w-2 h-2 rounded-full {{ event.dot_fill }}"></div>
+                </div>
+            </div>
+
+            <!-- Content -->
+            <div class="pb-6 flex-1">
+                <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium text-white">{{ event.event_type }}</span>
+                    {% match event.new_status %}
+                    {% when Some with (new) %}
+                    <span class="text-xs px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">{{ new }}</span>
+                    {% when None %}
+                    {% endmatch %}
+                </div>
+                <p class="text-xs text-gray-500 mt-0.5">{{ event.created_at }}</p>
+                {% match event.details %}
+                {% when Some with (details) %}
+                <p class="text-sm text-gray-400 mt-1">{{ details }}</p>
+                {% when None %}
+                {% endmatch %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

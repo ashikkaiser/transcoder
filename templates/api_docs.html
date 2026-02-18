@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+
+{% block title %}API Docs{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h2 class="text-2xl font-semibold text-white">API Documentation</h2>
+    <p class="text-sm text-gray-500 mt-1">REST API endpoints for the Video Transcoder service</p>
+</div>
+
+<!-- Base URL -->
+<div class="mb-6 p-4 rounded-xl border border-gray-800/60 bg-surface-100">
+    <p class="text-xs text-gray-500 mb-1">Base URL</p>
+    <code class="text-sm text-accent-light font-mono">http://localhost:{{ port }}</code>
+    {% if !api_key.is_empty() %}
+    <div class="mt-3 flex items-center gap-2 text-xs text-amber-400/80">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+        </svg>
+        API Key authentication is <strong class="text-amber-300">enabled</strong>. Include <code class="bg-gray-800 px-1.5 py-0.5 rounded text-gray-300">X-API-Key: &lt;key&gt;</code> or <code class="bg-gray-800 px-1.5 py-0.5 rounded text-gray-300">Authorization: Bearer &lt;key&gt;</code>
+    </div>
+    {% else %}
+    <div class="mt-3 flex items-center gap-2 text-xs text-gray-500">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/>
+        </svg>
+        No API Key set &mdash; API routes are open. Set one in <a href="/ui/settings" class="text-accent-light hover:text-white">Settings</a>.
+    </div>
+    {% endif %}
+</div>
+
+<div class="space-y-6">
+
+<!-- POST /transcode -->
+<div class="bg-surface-100 rounded-xl border border-gray-800/60 overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-800/40 flex items-center gap-3">
+        <span class="px-2.5 py-1 rounded text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">POST</span>
+        <code class="text-sm font-mono text-white">/transcode</code>
+        <span class="text-xs text-gray-500 ml-auto">Submit videos for transcoding</span>
+    </div>
+    <div class="p-5 space-y-4">
+        <div>
+            <p class="text-xs font-medium text-gray-400 mb-2">Request Body</p>
+            <pre class="text-xs bg-surface rounded-lg border border-gray-800/40 p-4 text-gray-300 overflow-x-auto"><code>{
+  "videos": [
+    {
+      "id": 12345,
+      "s3_key": "products/12345/video.mp4",
+      "video_url": "https://cdn.example.com/video.mp4",
+      "callback_url": "/api/transcode/callback"  // optional
+    }
+  ]
+}</code></pre>
+        </div>
+        <div>
+            <p class="text-xs font-medium text-gray-400 mb-2">Response <span class="text-gray-600">200</span></p>
+            <pre class="text-xs bg-surface rounded-lg border border-gray-800/40 p-4 text-gray-300 overflow-x-auto"><code>{
+  "accepted": [
+    {
+      "video_id": 12345,
+      "job_id": "a1b2c3d4-...",
+      "status": "queued",
+      "created": true
+    }
+  ]
+}</code></pre>
+        </div>
+        <div class="text-xs text-gray-500 space-y-1">
+            <p>&bull; <code class="text-gray-400">callback_url</code> is optional. Omit to use the base URL from Settings.</p>
+            <p>&bull; If a job already exists for the same <code class="text-gray-400">video_id</code>, the existing job is returned (<code class="text-gray-400">created: false</code>).</p>
+            <p>&bull; Max 100 videos per batch request.</p>
+        </div>
+    </div>
+</div>
+
+<!-- POST /transcode/cancel -->
+<div class="bg-surface-100 rounded-xl border border-gray-800/60 overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-800/40 flex items-center gap-3">
+        <span class="px-2.5 py-1 rounded text-xs font-bold bg-red-500/10 text-red-400 border border-red-500/20">POST</span>
+        <code class="text-sm font-mono text-white">/transcode/cancel</code>
+        <span class="text-xs text-gray-500 ml-auto">Cancel a transcoding job</span>
+    </div>
+    <div class="p-5 space-y-4">
+        <div>
+            <p class="text-xs font-medium text-gray-400 mb-2">Request Body</p>
+            <pre class="text-xs bg-surface rounded-lg border border-gray-800/40 p-4 text-gray-300 overflow-x-auto"><code>{
+  "video_id": 12345,
+  "reason": "No longer needed"  // optional
+}</code></pre>
+        </div>
+        <div>
+            <p class="text-xs font-medium text-gray-400 mb-2">Response <span class="text-gray-600">200</span></p>
+            <pre class="text-xs bg-surface rounded-lg border border-gray-800/40 p-4 text-gray-300 overflow-x-auto"><code>{
+  "video_id": 12345,
+  "status": "canceled",
+  "message": "Job a1b2c3d4-... canceled"
+}</code></pre>
+        </div>
+    </div>
+</div>
+
+<!-- GET /transcode/status/:video_id -->
+<div class="bg-surface-100 rounded-xl border border-gray-800/60 overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-800/40 flex items-center gap-3">
+        <span class="px-2.5 py-1 rounded text-xs font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">GET</span>
+        <code class="text-sm font-mono text-white">/transcode/status/:video_id</code>
+        <span class="text-xs text-gray-500 ml-auto">Get job status and event history</span>
+    </div>
+    <div class="p-5 space-y-4">
+        <div>
+            <p class="text-xs font-medium text-gray-400 mb-2">Response <span class="text-gray-600">200</span></p>
+            <pre class="text-xs bg-surface rounded-lg border border-gray-800/40 p-4 text-gray-300 overflow-x-auto"><code>{
+  "job": {
+    "id": "a1b2c3d4-...",
+    "video_id": 12345,
+    "status": "completed",
+    "attempt": 1,
+    "final_m3u8_url": "https://r2.example.com/hls/.../master.m3u8",
+    ...
+  },
+  "events": [ ... ]
+}</code></pre>
+        </div>
+    </div>
+</div>
+
+<!-- GET /health -->
+<div class="bg-surface-100 rounded-xl border border-gray-800/60 overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-800/40 flex items-center gap-3">
+        <span class="px-2.5 py-1 rounded text-xs font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">GET</span>
+        <code class="text-sm font-mono text-white">/health</code>
+        <span class="text-xs text-gray-500 ml-auto">Health check (no auth required)</span>
+    </div>
+    <div class="p-5">
+        <pre class="text-xs bg-surface rounded-lg border border-gray-800/40 p-4 text-gray-300 overflow-x-auto"><code>{
+  "status": "ok",
+  "version": "0.1.0",
+  "uptime_seconds": 3600,
+  "database": "connected"
+}</code></pre>
+    </div>
+</div>
+
+<!-- GET /metrics -->
+<div class="bg-surface-100 rounded-xl border border-gray-800/60 overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-800/40 flex items-center gap-3">
+        <span class="px-2.5 py-1 rounded text-xs font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">GET</span>
+        <code class="text-sm font-mono text-white">/metrics</code>
+        <span class="text-xs text-gray-500 ml-auto">Service metrics and system info</span>
+    </div>
+    <div class="p-5">
+        <pre class="text-xs bg-surface rounded-lg border border-gray-800/40 p-4 text-gray-300 overflow-x-auto"><code>{
+  "jobs_by_status": [ { "status": "completed", "count": 150 }, ... ],
+  "worker_concurrency": 4,
+  "system": { "cpu_percent": 12.5, "memory_used_mb": 128, ... }
+}</code></pre>
+    </div>
+</div>
+
+<!-- Callback Payload -->
+<div class="bg-surface-100 rounded-xl border border-gray-800/60 overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-800/40 flex items-center gap-3">
+        <span class="px-2.5 py-1 rounded text-xs font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20">CALLBACK</span>
+        <code class="text-sm font-mono text-white">POST &rarr; your server</code>
+        <span class="text-xs text-gray-500 ml-auto">Payload sent after job completes/fails</span>
+    </div>
+    <div class="p-5 space-y-4">
+        <pre class="text-xs bg-surface rounded-lg border border-gray-800/40 p-4 text-gray-300 overflow-x-auto"><code>{
+  "video_id": 12345,
+  "status": "completed",
+  "final_m3u8_url": "https://r2.example.com/hls/products/12345/video/master.m3u8",
+  "error_message": null,
+  "started_at": "2026-02-10T10:00:00Z",
+  "finished_at": "2026-02-10T10:05:30Z",
+  "attempt": 1,
+  "metadata": {
+    "duration_seconds": 120.5,
+    "renditions": ["360p", "720p", "1080p"]
+  }
+}</code></pre>
+        <p class="text-xs text-gray-500">This is what your server receives. Test it below in the <a href="/ui/callback-tester" class="text-accent-light hover:text-white">Callback Tester</a>.</p>
+    </div>
+</div>
+
+</div>
+{% endblock %}

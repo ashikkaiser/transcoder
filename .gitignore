@@ -1,0 +1,9 @@
+target/
+node_modules/
+.env
+*.db
+*.db-shm
+*.db-wal
+*.mp4
+/tmp/
+/workspace/

@@ -1,0 +1,55 @@
+<table class="w-full">
+    <thead>
+        <tr class="border-b border-gray-800/60">
+            <th class="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Video ID</th>
+            <th class="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+            <th class="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Attempt</th>
+            <th class="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+            <th class="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Updated</th>
+            <th class="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+        </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-800/40">
+        {% if jobs.is_empty() %}
+        <tr>
+            <td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500">No jobs found.</td>
+        </tr>
+        {% else %}
+        {% for job in jobs %}
+        <tr class="hover:bg-white/[0.02] transition-colors">
+            <td class="px-4 py-3">
+                <a href="/ui/jobs/{{ job.id }}" class="text-sm font-medium text-accent-light hover:text-white transition-colors">
+                    {{ job.video_id }}
+                </a>
+            </td>
+            <td class="px-4 py-3">
+                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium
+                    {% if job.status == "completed" %}bg-emerald-500/10 text-emerald-400
+                    {% else if job.status == "failed" %}bg-red-500/10 text-red-400
+                    {% else if job.status == "canceled" %}bg-gray-500/10 text-gray-400
+                    {% else if job.status == "queued" %}bg-yellow-500/10 text-yellow-400
+                    {% else %}bg-blue-500/10 text-blue-400{% endif %}">
+                    {% if job.status == "downloading" || job.status == "transcoding" || job.status == "uploading" %}
+                    <span class="w-1.5 h-1.5 rounded-full bg-current status-pulse"></span>
+                    {% endif %}
+                    {{ job.status }}
+                </span>
+            </td>
+            <td class="px-4 py-3 text-sm text-gray-400">{{ job.attempt }}/{{ job.max_attempts }}</td>
+            <td class="px-4 py-3 text-sm text-gray-400">{{ job.created_at }}</td>
+            <td class="px-4 py-3 text-sm text-gray-400">{{ job.updated_at }}</td>
+            <td class="px-4 py-3 text-right">
+                <a href="/ui/jobs/{{ job.id }}"
+                   class="text-xs text-gray-500 hover:text-accent-light transition-colors">Details</a>
+                {% if job.status != "completed" && job.status != "canceled" && job.status != "failed" %}
+                <form method="post" action="/ui/jobs/{{ job.video_id }}/cancel" class="inline ml-2"
+                      onsubmit="return confirm('Cancel this job?')">
+                    <button type="submit" class="text-xs text-gray-500 hover:text-red-400 transition-colors">Cancel</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+        {% endif %}
+    </tbody>
+</table>

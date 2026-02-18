@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Video Transcoder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        surface: { DEFAULT: '#0f1117', 100: '#161822', 200: '#1e2030' },
+                        accent:  { DEFAULT: '#6366f1', light: '#818cf8' },
+                    }
+                }
+            }
+        }
+    </script>
+    <style>body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }</style>
+</head>
+<body class="h-full bg-surface flex items-center justify-center">
+    <div class="w-full max-w-sm">
+        <!-- Logo + Title -->
+        <div class="text-center mb-8">
+            <div class="w-14 h-14 rounded-2xl bg-accent/20 flex items-center justify-center mx-auto mb-4">
+                <svg class="w-8 h-8 text-accent-light" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+            </div>
+            <h1 class="text-xl font-semibold text-white">Video Transcoder</h1>
+            <p class="text-sm text-gray-500 mt-1">Sign in to the admin dashboard</p>
+        </div>
+
+        <!-- Login card -->
+        <div class="bg-surface-100 rounded-xl border border-gray-800/60 p-6">
+            {% if error %}
+            <div class="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                Invalid username or password.
+            </div>
+            {% endif %}
+
+            <form method="post" action="/auth/login" class="space-y-4">
+                <div>
+                    <label for="username" class="block text-sm font-medium text-gray-300 mb-1.5">Username</label>
+                    <input type="text" id="username" name="username" required autofocus
+                           class="w-full rounded-lg border border-gray-700 bg-surface px-3 py-2.5 text-sm text-white
+                                  placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent
+                                  transition-colors"
+                           placeholder="admin">
+                </div>
+                <div>
+                    <label for="password" class="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
+                    <input type="password" id="password" name="password" required
+                           class="w-full rounded-lg border border-gray-700 bg-surface px-3 py-2.5 text-sm text-white
+                                  placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent
+                                  transition-colors"
+                           placeholder="Enter password">
+                </div>
+                <button type="submit"
+                        class="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white
+                               hover:bg-accent-light focus:outline-none focus:ring-2 focus:ring-accent/50
+                               transition-colors">
+                    Sign in
+                </button>
+            </form>
+        </div>
+
+        <p class="text-center text-xs text-gray-600 mt-6">
+            Video Transcoder v{{ version }}
+        </p>
+    </div>
+</body>
+</html>
