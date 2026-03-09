@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Local deploy for Debian – builds on this machine, never removes/overwrites
 # host files (.env, database, etc.)
+# Run as root: su -c './deploy-local.sh'  (sudo not required)
 set -euo pipefail
+
+[ "$(id -u)" -eq 0 ] || { echo "Run as root: su -c './deploy-local.sh'"; exit 1; }
 
 # ── Configuration ────────────────────────────────────────────────────────
 INSTALL_DIR="${INSTALL_DIR:-$(pwd)}"
@@ -31,8 +34,8 @@ dpkg -s libssl-dev &>/dev/null 2>&1 || PACKAGES="$PACKAGES libssl-dev"
 
 if [ -n "$PACKAGES" ]; then
     echo "  Installing:$PACKAGES"
-    sudo apt-get update -qq
-    sudo apt-get install -y -qq $PACKAGES
+    apt-get update -qq
+    apt-get install -y -qq $PACKAGES
 fi
 ok "System dependencies ready"
 
@@ -92,7 +95,7 @@ ok "Generated .env.systemd"
 
 # Use project dir as working directory (no /opt/transcoder)
 WORK_DIR="$(pwd)"
-sudo tee /etc/systemd/system/${SERVICE_NAME}.service > /dev/null <<EOF
+tee /etc/systemd/system/${SERVICE_NAME}.service > /dev/null <<EOF
 [Unit]
 Description=Video Transcoder Service (Local)
 After=network.target
@@ -121,16 +124,16 @@ SyslogIdentifier=${SERVICE_NAME}
 WantedBy=multi-user.target
 EOF
 
-sudo systemctl daemon-reload
-sudo systemctl enable "${SERVICE_NAME}" 2>/dev/null || true
+systemctl daemon-reload
+systemctl enable "${SERVICE_NAME}" 2>/dev/null || true
 
 # ── Start / restart ──────────────────────────────────────────────────────
 step "Starting service..."
 if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
-    sudo systemctl restart "${SERVICE_NAME}"
+    systemctl restart "${SERVICE_NAME}"
     ok "Restarted ${SERVICE_NAME}"
 else
-    sudo systemctl start "${SERVICE_NAME}"
+    systemctl start "${SERVICE_NAME}"
     ok "Started ${SERVICE_NAME}"
 fi
 
