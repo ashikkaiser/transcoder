@@ -100,6 +100,13 @@ impl WorkerPool {
                 .instrument(tracing::info_span!("stale_detector")),
         );
 
+        // Callback retry scheduler — retries only the callback, not the full pipeline
+        let p = Arc::clone(&pool);
+        tokio::spawn(
+            async move { p.callback_retry_scheduler().await }
+                .instrument(tracing::info_span!("callback_retry_scheduler")),
+        );
+
         info!(concurrency, "Worker pool started");
     }
 
@@ -219,7 +226,7 @@ impl WorkerPool {
 
                     match self.process_job(&job, &cancel_token).await {
                         Ok(()) => {
-                            info!(job_id = %job_id, video_id, "Job completed");
+                            info!(job_id = %job_id, video_id, "Job processing finished");
                             self.tracker.record_completion(worker_id);
                         }
                         Err(TranscoderError::Canceled) => {
@@ -329,15 +336,27 @@ impl WorkerPool {
         self.r2.upload_directory(&output_dir, &prefix).await?;
         check_cancel(cancel_token)?;
 
+        // ── Save output artifacts before callback ────────────────────
+        let m3u8_key = format!("{prefix}/master.m3u8");
+        let m3u8_url = self.r2.public_url(&m3u8_key);
+
+        let metadata = TranscodeMetadata {
+            duration_seconds: Some(video_info.duration_seconds),
+            renditions: renditions.iter().map(|r| r.name.clone()).collect(),
+        };
+        let meta_json = serde_json::to_string(&metadata).ok();
+
+        self.repo
+            .save_output_data(&job.id, &m3u8_url, &prefix, meta_json.as_deref())
+            .await
+            .map_err(|e| TranscoderError::Internal(e.to_string()))?;
+
         // ── Callback ────────────────────────────────────────────────────
         self.progress.set_phase(job.video_id, &job.id, "callback");
         self.repo
             .update_status(&job.id, JobStatus::CallbackPending)
             .await
             .map_err(|e| TranscoderError::Internal(e.to_string()))?;
-
-        let m3u8_key = format!("{prefix}/master.m3u8");
-        let m3u8_url = self.r2.public_url(&m3u8_key);
 
         let payload = CallbackPayload {
             video_id: job.video_id,
@@ -347,34 +366,50 @@ impl WorkerPool {
             started_at: job.started_at.clone(),
             finished_at: Some(Utc::now().to_rfc3339()),
             attempt: job.attempt,
-            metadata: Some(TranscodeMetadata {
-                duration_seconds: Some(video_info.duration_seconds),
-                renditions: renditions.iter().map(|r| r.name.clone()).collect(),
-            }),
+            metadata: Some(metadata),
         };
 
-        let report = callback::send_callback(
+        match callback::send_callback(
             &self.http, &self.settings, &job.callback_url, &payload, 3,
         )
-        .await?;
+        .await
+        {
+            Ok(report) => {
+                self.log_callback_events(&job.id, &report).await;
 
-        // Log callback attempts as job events for webhook visibility
-        self.log_callback_events(&job.id, &report).await;
+                // ── Complete ────────────────────────────────────────────
+                self.progress.remove(job.video_id);
+                self.repo
+                    .complete_job(&job.id, &m3u8_url, &prefix, meta_json.as_deref())
+                    .await
+                    .map_err(|e| TranscoderError::Internal(e.to_string()))?;
 
-        // ── Complete ────────────────────────────────────────────────────
-        self.progress.remove(job.video_id);
+                // ── Delete source from R2 if enabled ────────────────────
+                if self.settings.delete_source_after_transcode().await {
+                    info!(video_id = job.video_id, s3_key = %job.s3_key, "Deleting source file from R2");
+                    if let Err(e) = self.r2.delete_object(&job.s3_key).await {
+                        warn!(video_id = job.video_id, error = %e, "Failed to delete source file (non-fatal)");
+                    }
+                }
+            }
+            Err(cb_err) => {
+                // Callback failed but transcode+upload succeeded — schedule
+                // only the callback for retry, NOT the entire pipeline.
+                warn!(
+                    job_id = %job.id, video_id = job.video_id,
+                    error = %cb_err, "Callback failed, scheduling callback-only retry"
+                );
 
-        let meta_json = serde_json::to_string(&payload.metadata).ok();
-        self.repo
-            .complete_job(&job.id, &m3u8_url, &prefix, meta_json.as_deref())
-            .await
-            .map_err(|e| TranscoderError::Internal(e.to_string()))?;
+                let nra = retry::next_retry_at(job.callback_attempt);
+                self.repo
+                    .mark_callback_failed(&job.id, &cb_err.to_string(), &nra.to_rfc3339())
+                    .await
+                    .map_err(|e| TranscoderError::Internal(e.to_string()))?;
 
-        // ── Delete source from R2 if enabled ───────────────────────────
-        if self.settings.delete_source_after_transcode().await {
-            info!(video_id = job.video_id, s3_key = %job.s3_key, "Deleting source file from R2");
-            if let Err(e) = self.r2.delete_object(&job.s3_key).await {
-                warn!(video_id = job.video_id, error = %e, "Failed to delete source file (non-fatal)");
+                self.progress.remove(job.video_id);
+                // Return Ok — the expensive work is done, worker can move on.
+                // The callback_retry_scheduler will handle subsequent attempts.
+                return Ok(());
             }
         }
 
@@ -552,6 +587,121 @@ impl WorkerPool {
 
             tokio::select! {
                 _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => {}
+                _ = self.shutdown.cancelled() => break,
+            }
+        }
+    }
+
+    // ── Background: callback retry scheduler ──────────────────────────
+    // Retries ONLY the callback for jobs where transcode+upload succeeded
+    // but the callback failed. Avoids re-processing the entire pipeline.
+
+    async fn callback_retry_scheduler(&self) {
+        const MAX_CALLBACK_RETRIES: i32 = 10;
+
+        loop {
+            if self.shutdown.is_cancelled() {
+                break;
+            }
+
+            match self.repo.get_callback_retry_jobs().await {
+                Ok(jobs) => {
+                    for job in jobs {
+                        info!(
+                            job_id = %job.id, video_id = job.video_id,
+                            callback_attempt = job.callback_attempt,
+                            "Retrying callback (callback-only)"
+                        );
+
+                        let m3u8_url = match &job.final_m3u8_url {
+                            Some(url) => url.clone(),
+                            None => {
+                                error!(job_id = %job.id, "No m3u8_url saved, cannot retry callback");
+                                self.repo
+                                    .fail_callback_permanently(&job.id, "No output URL saved")
+                                    .await
+                                    .ok();
+                                continue;
+                            }
+                        };
+
+                        let payload = CallbackPayload {
+                            video_id: job.video_id,
+                            status: "completed".into(),
+                            final_m3u8_url: Some(m3u8_url),
+                            error_message: None,
+                            started_at: job.started_at.clone(),
+                            finished_at: Some(Utc::now().to_rfc3339()),
+                            attempt: job.attempt,
+                            metadata: job.metadata.as_deref().and_then(|m| {
+                                serde_json::from_str::<TranscodeMetadata>(m).ok()
+                            }),
+                        };
+
+                        // Single attempt per scheduler tick (no internal retries)
+                        match callback::send_callback(
+                            &self.http, &self.settings, &job.callback_url, &payload, 0,
+                        )
+                        .await
+                        {
+                            Ok(report) => {
+                                self.log_callback_events(&job.id, &report).await;
+                                info!(job_id = %job.id, video_id = job.video_id, "Callback retry succeeded");
+
+                                self.repo.complete_callback_retry(&job.id).await.ok();
+
+                                if self.settings.delete_source_after_transcode().await {
+                                    info!(video_id = job.video_id, s3_key = %job.s3_key, "Deleting source file from R2");
+                                    if let Err(e) = self.r2.delete_object(&job.s3_key).await {
+                                        warn!(video_id = job.video_id, error = %e, "Failed to delete source file (non-fatal)");
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                let msg = e.to_string();
+                                warn!(
+                                    job_id = %job.id, video_id = job.video_id,
+                                    callback_attempt = job.callback_attempt,
+                                    error = %msg, "Callback retry failed"
+                                );
+
+                                self.repo
+                                    .log_event_public(
+                                        &job.id, "callback_retry_failed", None, None,
+                                        Some(&format!("Callback retry #{} failed: {msg}", job.callback_attempt)),
+                                    )
+                                    .await
+                                    .ok();
+
+                                if job.callback_attempt >= MAX_CALLBACK_RETRIES {
+                                    error!(
+                                        job_id = %job.id, video_id = job.video_id,
+                                        "Max callback retries ({MAX_CALLBACK_RETRIES}) exhausted, marking failed"
+                                    );
+                                    self.repo
+                                        .fail_callback_permanently(
+                                            &job.id,
+                                            &format!("Callback failed after {MAX_CALLBACK_RETRIES} retries: {msg}"),
+                                        )
+                                        .await
+                                        .ok();
+                                    self.send_failure_callback(&job, &msg).await;
+                                } else {
+                                    let nra = retry::next_retry_at(job.callback_attempt);
+                                    self.repo
+                                        .mark_callback_failed(&job.id, &msg, &nra.to_rfc3339())
+                                        .await
+                                        .ok();
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => error!(error = %e, "get_callback_retry_jobs failed"),
+            }
+
+            tokio::select! {
+                _ = tokio::time::sleep(std::time::Duration::from_secs(15)) => {}
                 _ = self.shutdown.cancelled() => break,
             }
         }

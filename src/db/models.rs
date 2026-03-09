@@ -12,6 +12,7 @@ pub enum JobStatus {
     Transcoding,
     Uploading,
     CallbackPending,
+    CallbackFailed,
     Completed,
     Failed,
     Canceled,
@@ -25,6 +26,7 @@ impl JobStatus {
             Self::Transcoding => "transcoding",
             Self::Uploading => "uploading",
             Self::CallbackPending => "callback_pending",
+            Self::CallbackFailed => "callback_failed",
             Self::Completed => "completed",
             Self::Failed => "failed",
             Self::Canceled => "canceled",
@@ -38,6 +40,7 @@ impl JobStatus {
             "transcoding" => Some(Self::Transcoding),
             "uploading" => Some(Self::Uploading),
             "callback_pending" => Some(Self::CallbackPending),
+            "callback_failed" => Some(Self::CallbackFailed),
             "completed" => Some(Self::Completed),
             "failed" => Some(Self::Failed),
             "canceled" => Some(Self::Canceled),
@@ -89,6 +92,7 @@ pub struct Job {
     pub worker_id: Option<String>,
     pub claimed_at: Option<String>,
     pub metadata: Option<String>,
+    pub callback_attempt: i32,
 }
 
 impl Job {

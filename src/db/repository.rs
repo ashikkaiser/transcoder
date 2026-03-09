@@ -33,12 +33,23 @@ impl JobRepository {
         let migrations = [
             include_str!("../../migrations/001_init.sql"),
             include_str!("../../migrations/002_settings.sql"),
+            include_str!("../../migrations/003_callback_retry.sql"),
         ];
         for sql in migrations {
             for statement in sql.split(';') {
                 let trimmed = statement.trim();
                 if !trimmed.is_empty() {
-                    sqlx::query(trimmed).execute(&self.pool).await?;
+                    match sqlx::query(trimmed).execute(&self.pool).await {
+                        Ok(_) => {}
+                        Err(e) => {
+                            let msg = e.to_string();
+                            if msg.contains("duplicate column") || msg.contains("already exists") {
+                                // Idempotent: column already added
+                            } else {
+                                return Err(e);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -272,6 +283,135 @@ impl JobRepository {
         Ok(())
     }
 
+    /// Save output artifacts (m3u8_url, prefix, metadata) without changing status.
+    /// Called after successful upload, before callback attempt, so data persists
+    /// even if the callback fails.
+    pub async fn save_output_data(
+        &self,
+        job_id: &str,
+        m3u8_url: &str,
+        output_prefix: &str,
+        metadata: Option<&str>,
+    ) -> Result<(), sqlx::Error> {
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            "UPDATE jobs \
+             SET final_m3u8_url = ?1, \
+                 output_prefix  = ?2, \
+                 metadata       = ?3, \
+                 updated_at     = ?4 \
+             WHERE id = ?5",
+        )
+        .bind(m3u8_url)
+        .bind(output_prefix)
+        .bind(metadata)
+        .bind(&now)
+        .bind(job_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Mark a job as callback_failed with a scheduled retry time.
+    pub async fn mark_callback_failed(
+        &self,
+        job_id: &str,
+        error: &str,
+        next_retry_at: &str,
+    ) -> Result<(), sqlx::Error> {
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            "UPDATE jobs \
+             SET status            = 'callback_failed', \
+                 last_error        = ?1, \
+                 next_retry_at     = ?2, \
+                 callback_attempt  = callback_attempt + 1, \
+                 updated_at        = ?3, \
+                 worker_id         = NULL, \
+                 claimed_at        = NULL \
+             WHERE id = ?4",
+        )
+        .bind(error)
+        .bind(next_retry_at)
+        .bind(&now)
+        .bind(job_id)
+        .execute(&self.pool)
+        .await?;
+
+        self.log_event(job_id, "callback_failed", Some("callback_pending"), Some("callback_failed"), Some(error))
+            .await
+            .ok();
+        Ok(())
+    }
+
+    /// Find jobs whose callback failed and are due for retry.
+    pub async fn get_callback_retry_jobs(&self) -> Result<Vec<Job>, sqlx::Error> {
+        let now = Utc::now().to_rfc3339();
+        sqlx::query_as::<_, Job>(
+            "SELECT * FROM jobs \
+             WHERE status = 'callback_failed' \
+               AND next_retry_at IS NOT NULL \
+               AND next_retry_at <= ?1 \
+             ORDER BY next_retry_at ASC",
+        )
+        .bind(&now)
+        .fetch_all(&self.pool)
+        .await
+    }
+
+    /// Transition a callback_failed job to completed after a successful callback retry.
+    pub async fn complete_callback_retry(
+        &self,
+        job_id: &str,
+    ) -> Result<(), sqlx::Error> {
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            "UPDATE jobs \
+             SET status        = 'completed', \
+                 finished_at   = ?1, \
+                 updated_at    = ?1, \
+                 next_retry_at = NULL, \
+                 last_error    = NULL \
+             WHERE id = ?2",
+        )
+        .bind(&now)
+        .bind(job_id)
+        .execute(&self.pool)
+        .await?;
+
+        self.log_event(job_id, "completed", Some("callback_failed"), Some("completed"), Some("Callback retry succeeded"))
+            .await
+            .ok();
+        Ok(())
+    }
+
+    /// Permanently fail a callback_failed job after max callback retries exhausted.
+    pub async fn fail_callback_permanently(
+        &self,
+        job_id: &str,
+        error: &str,
+    ) -> Result<(), sqlx::Error> {
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            "UPDATE jobs \
+             SET status        = 'failed', \
+                 last_error    = ?1, \
+                 next_retry_at = NULL, \
+                 updated_at    = ?2 \
+             WHERE id = ?3",
+        )
+        .bind(error)
+        .bind(&now)
+        .bind(job_id)
+        .execute(&self.pool)
+        .await?;
+
+        self.log_event(job_id, "failed", Some("callback_failed"), Some("failed"), Some(error))
+            .await
+            .ok();
+        Ok(())
+    }
+
     pub async fn fail_job(
         &self,
         job_id: &str,
@@ -396,7 +536,7 @@ impl JobRepository {
     pub async fn find_stale_jobs(&self, stale_threshold: &str) -> Result<Vec<Job>, sqlx::Error> {
         sqlx::query_as::<_, Job>(
             "SELECT * FROM jobs \
-             WHERE status IN ('downloading', 'transcoding', 'uploading', 'callback_pending') \
+             WHERE status IN ('downloading', 'transcoding', 'uploading', 'callback_pending', 'callback_failed') \
                AND claimed_at IS NOT NULL \
                AND claimed_at < ?1",
         )
@@ -425,14 +565,14 @@ impl JobRepository {
 
     // ── Admin: Retry / Clean / Purge ─────────────────────────────────
 
-    /// Force-retry a single failed job: reset to queued regardless of attempt count.
+    /// Force-retry a single failed or callback_failed job: reset to queued regardless of attempt count.
     pub async fn admin_retry_job(&self, job_id: &str) -> Result<bool, sqlx::Error> {
         let now = Utc::now().to_rfc3339();
         let res = sqlx::query(
             "UPDATE jobs \
              SET status = 'queued', next_retry_at = NULL, last_error = NULL, \
-                 worker_id = NULL, claimed_at = NULL, updated_at = ?1 \
-             WHERE id = ?2 AND status = 'failed'",
+                 callback_attempt = 0, worker_id = NULL, claimed_at = NULL, updated_at = ?1 \
+             WHERE id = ?2 AND status IN ('failed', 'callback_failed')",
         )
         .bind(&now)
         .bind(job_id)
@@ -449,15 +589,15 @@ impl JobRepository {
         }
     }
 
-    /// Retry ALL failed jobs – resets them to queued.
+    /// Retry ALL failed/callback_failed jobs – resets them to queued.
     /// Returns the number of jobs re-queued.
     pub async fn admin_retry_all_failed(&self) -> Result<u64, sqlx::Error> {
         let now = Utc::now().to_rfc3339();
         let res = sqlx::query(
             "UPDATE jobs \
              SET status = 'queued', next_retry_at = NULL, last_error = NULL, \
-                 worker_id = NULL, claimed_at = NULL, updated_at = ?1 \
-             WHERE status = 'failed'",
+                 callback_attempt = 0, worker_id = NULL, claimed_at = NULL, updated_at = ?1 \
+             WHERE status IN ('failed', 'callback_failed')",
         )
         .bind(&now)
         .execute(&self.pool)

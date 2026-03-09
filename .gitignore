@@ -7,3 +7,4 @@ node_modules/
 *.mp4
 /tmp/
 /workspace/
+deploy.sh

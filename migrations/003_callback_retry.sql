@@ -1,0 +1,1 @@
+ALTER TABLE jobs ADD COLUMN callback_attempt INTEGER NOT NULL DEFAULT 0;

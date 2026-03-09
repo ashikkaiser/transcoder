@@ -17,11 +17,12 @@
         <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wide
             {% if job.status == "completed" %}bg-emerald-500/10 text-emerald-400 border border-emerald-500/20
             {% else if job.status == "failed" %}bg-red-500/10 text-red-400 border border-red-500/20
+            {% else if job.status == "callback_failed" %}bg-orange-500/10 text-orange-400 border border-orange-500/20
             {% else if job.status == "canceled" %}bg-gray-500/10 text-gray-400 border border-gray-500/20
             {% else if job.status == "queued" %}bg-yellow-500/10 text-yellow-400 border border-yellow-500/20
             {% else %}bg-blue-500/10 text-blue-400 border border-blue-500/20{% endif %}">
-            {% if job.status == "downloading" || job.status == "transcoding" || job.status == "uploading" %}
-            <span class="w-1.5 h-1.5 rounded-full bg-blue-400 status-pulse"></span>
+            {% if job.status == "downloading" || job.status == "transcoding" || job.status == "uploading" || job.status == "callback_failed" %}
+            <span class="w-1.5 h-1.5 rounded-full bg-current status-pulse"></span>
             {% endif %}
             {{ job.status }}
         </span>

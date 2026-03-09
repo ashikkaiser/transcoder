@@ -1,5 +1,5 @@
 use reqwest::Client;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use crate::error::TranscoderError;
@@ -22,7 +22,7 @@ pub struct CallbackPayload {
     pub metadata: Option<TranscodeMetadata>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TranscodeMetadata {
     pub duration_seconds: Option<f64>,
     pub renditions: Vec<String>,

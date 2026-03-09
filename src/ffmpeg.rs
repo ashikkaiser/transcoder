@@ -26,6 +26,8 @@ pub struct FfmpegInfo {
     pub ffprobe_path: String,
     pub encoders: Vec<String>,   // e.g. ["libx264", "aac", ...]
     pub hw_accels: Vec<String>,  // e.g. ["videotoolbox", "cuda"]
+    /// GPU encoders that passed runtime probe (actual hardware present).
+    pub usable_gpu_encoders: Vec<String>,
 }
 
 impl FfmpegInfo {
@@ -141,9 +143,42 @@ pub async fn detect() -> FfmpegInfo {
                 }
             }
         }
+
+        // ── Runtime probe: which GPU encoders actually work on this machine ──
+        let gpu_encoders = [
+            "h264_videotoolbox",
+            "h264_nvenc",
+            "h264_qsv",
+            "h264_vaapi",
+        ];
+        for enc in &gpu_encoders {
+            if info.encoders.contains(&enc.to_string()) && probe_encoder_usable(enc).await {
+                info.usable_gpu_encoders.push((*enc).to_string());
+            }
+        }
     }
 
     info
+}
+
+/// Probe whether a GPU encoder actually works (hardware present).
+async fn probe_encoder_usable(encoder: &str) -> bool {
+    let out = tokio::process::Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-f", "lavfi",
+            "-i", "testsrc=duration=0.05:size=32x32",
+            "-c:v", encoder,
+            "-f", "null",
+            "-",
+        ])
+        .output()
+        .await;
+
+    match out {
+        Ok(o) => o.status.success(),
+        Err(_) => false,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -230,53 +265,52 @@ pub fn resolve_encoder(mode: &HwAccelMode, ff: &FfmpegInfo) -> ResolvedEncoder {
     match mode {
         HwAccelMode::Cpu => ResolvedEncoder::cpu(),
         HwAccelMode::Videotoolbox => {
-            if ff.encoders.contains(&"h264_videotoolbox".to_string()) {
+            if ff.usable_gpu_encoders.contains(&"h264_videotoolbox".to_string()) {
                 ResolvedEncoder::videotoolbox()
             } else {
-                warn!("h264_videotoolbox not available, falling back to CPU");
+                warn!("h264_videotoolbox not usable (no hardware), falling back to CPU");
                 ResolvedEncoder::cpu()
             }
         }
         HwAccelMode::Nvenc => {
-            if ff.encoders.contains(&"h264_nvenc".to_string()) {
+            if ff.usable_gpu_encoders.contains(&"h264_nvenc".to_string()) {
                 ResolvedEncoder::nvenc()
             } else {
-                warn!("h264_nvenc not available, falling back to CPU");
+                warn!("h264_nvenc not usable (no hardware), falling back to CPU");
                 ResolvedEncoder::cpu()
             }
         }
         HwAccelMode::Qsv => {
-            if ff.encoders.contains(&"h264_qsv".to_string()) {
+            if ff.usable_gpu_encoders.contains(&"h264_qsv".to_string()) {
                 ResolvedEncoder::qsv()
             } else {
-                warn!("h264_qsv not available, falling back to CPU");
+                warn!("h264_qsv not usable (no hardware), falling back to CPU");
                 ResolvedEncoder::cpu()
             }
         }
         HwAccelMode::Vaapi => {
-            if ff.encoders.contains(&"h264_vaapi".to_string()) {
+            if ff.usable_gpu_encoders.contains(&"h264_vaapi".to_string()) {
                 ResolvedEncoder::vaapi()
             } else {
-                warn!("h264_vaapi not available, falling back to CPU");
+                warn!("h264_vaapi not usable (no hardware), falling back to CPU");
                 ResolvedEncoder::cpu()
             }
         }
         HwAccelMode::Auto => {
-            // Priority: videotoolbox > nvenc > qsv > vaapi > CPU
-            if ff.encoders.contains(&"h264_videotoolbox".to_string()) {
+            if ff.usable_gpu_encoders.contains(&"h264_videotoolbox".to_string()) {
                 info!("Auto-detected Apple VideoToolbox GPU encoder");
                 ResolvedEncoder::videotoolbox()
-            } else if ff.encoders.contains(&"h264_nvenc".to_string()) {
+            } else if ff.usable_gpu_encoders.contains(&"h264_nvenc".to_string()) {
                 info!("Auto-detected NVIDIA NVENC GPU encoder");
                 ResolvedEncoder::nvenc()
-            } else if ff.encoders.contains(&"h264_qsv".to_string()) {
+            } else if ff.usable_gpu_encoders.contains(&"h264_qsv".to_string()) {
                 info!("Auto-detected Intel QSV GPU encoder");
                 ResolvedEncoder::qsv()
-            } else if ff.encoders.contains(&"h264_vaapi".to_string()) {
+            } else if ff.usable_gpu_encoders.contains(&"h264_vaapi".to_string()) {
                 info!("Auto-detected VA-API GPU encoder");
                 ResolvedEncoder::vaapi()
             } else {
-                info!("No GPU encoder found, using CPU (libx264)");
+                info!("No usable GPU encoder (probe failed), using CPU (libx264)");
                 ResolvedEncoder::cpu()
             }
         }

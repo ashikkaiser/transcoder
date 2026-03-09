@@ -64,7 +64,7 @@ impl DashboardStats {
             stats.total += count;
             match status.as_str() {
                 "queued" => stats.queued += count,
-                "downloading" | "transcoding" | "uploading" | "callback_pending" => {
+                "downloading" | "transcoding" | "uploading" | "callback_pending" | "callback_failed" => {
                     stats.active += count
                 }
                 "completed" => stats.completed += count,
@@ -583,6 +583,8 @@ pub async fn page_jobs(
         "downloading",
         "transcoding",
         "uploading",
+        "callback_pending",
+        "callback_failed",
         "completed",
         "failed",
         "canceled",
@@ -851,16 +853,18 @@ pub async fn page_settings(
     let renditions = current.renditions.clone();
     let ffmpeg = crate::ffmpeg::detect().await;
 
-    // Build HW accel options with availability status
+    // Build HW accel options with availability status.
+    // GPU options use usable_gpu_encoders (runtime probe) so encoders without
+    // actual hardware are disabled.
     let hw_accel_modes: Vec<HwAccelModeOption> = HwAccelMode::all()
         .into_iter()
         .map(|m| {
             let available = match &m {
                 HwAccelMode::Auto | HwAccelMode::Cpu => true,
-                HwAccelMode::Videotoolbox => ffmpeg.encoders.contains(&"h264_videotoolbox".to_string()),
-                HwAccelMode::Nvenc => ffmpeg.encoders.contains(&"h264_nvenc".to_string()),
-                HwAccelMode::Qsv => ffmpeg.encoders.contains(&"h264_qsv".to_string()),
-                HwAccelMode::Vaapi => ffmpeg.encoders.contains(&"h264_vaapi".to_string()),
+                HwAccelMode::Videotoolbox => ffmpeg.usable_gpu_encoders.contains(&"h264_videotoolbox".to_string()),
+                HwAccelMode::Nvenc => ffmpeg.usable_gpu_encoders.contains(&"h264_nvenc".to_string()),
+                HwAccelMode::Qsv => ffmpeg.usable_gpu_encoders.contains(&"h264_qsv".to_string()),
+                HwAccelMode::Vaapi => ffmpeg.usable_gpu_encoders.contains(&"h264_vaapi".to_string()),
             };
             HwAccelModeOption {
                 selected: m == current.hw_accel,
