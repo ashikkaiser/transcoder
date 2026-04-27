@@ -7,7 +7,7 @@ set -euo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "Run as root: su -c './deploy-local.sh'"; exit 1; }
 
 # ── Configuration ────────────────────────────────────────────────────────
-INSTALL_DIR="${INSTALL_DIR:-$(pwd)}"
+INSTALL_DIR="${INSTALL_DIR:-/opt/transcoder}"
 SERVICE_NAME="transcoder"
 BINARY_NAME="transcoder"
 
@@ -62,13 +62,22 @@ fi
 SIZE=$(du -sh "$BINARY" | cut -f1)
 ok "Built ($SIZE)"
 
+# ── Install to dedicated path ────────────────────────────────────────────
+step "Installing to ${INSTALL_DIR}..."
+mkdir -p "${INSTALL_DIR}"
+cp "${BINARY}" "${INSTALL_DIR}/${BINARY_NAME}"
+chmod 755 "${INSTALL_DIR}/${BINARY_NAME}"
+[ -d templates ]  && cp -r templates  "${INSTALL_DIR}/"
+[ -d migrations ] && cp -r migrations "${INSTALL_DIR}/"
+ok "Installed to ${INSTALL_DIR}"
+
 # ── .env: never overwrite existing ───────────────────────────────────────
-if [ ! -f .env ]; then
+if [ ! -f "${INSTALL_DIR}/.env" ]; then
     if [ -f .env.example ]; then
-        cp .env.example .env
-        warn "Created .env from .env.example — edit it with your secrets!"
+        cp .env.example "${INSTALL_DIR}/.env"
+        warn "Created .env from .env.example — edit ${INSTALL_DIR}/.env with your secrets!"
     else
-        cat > .env <<'EOF'
+        cat > "${INSTALL_DIR}/.env" <<'EOF'
 PORT=3005
 TEMP_DIR=/tmp/transcoder
 DATABASE_URL=sqlite:./transcoder.db
@@ -80,21 +89,20 @@ R2_SECRET_ACCESS_KEY=
 R2_BUCKET_NAME=
 R2_PUBLIC_URL=
 EOF
-        warn "Created minimal .env — fill in R2 credentials!"
+        warn "Created minimal .env — fill in ${INSTALL_DIR}/.env with R2 credentials!"
     fi
 else
-    ok ".env exists (unchanged)"
+    ok "${INSTALL_DIR}/.env exists (unchanged)"
 fi
 
 mkdir -p /tmp/transcoder
 
 # ── Systemd service ──────────────────────────────────────────────────────
 step "Configuring systemd service..."
-grep -v '^#' .env | grep -v '^$' > .env.systemd 2>/dev/null || true
-ok "Generated .env.systemd"
+grep -v '^#' "${INSTALL_DIR}/.env" | grep -v '^$' > "${INSTALL_DIR}/.env.systemd" 2>/dev/null || true
+ok "Generated ${INSTALL_DIR}/.env.systemd"
 
-# Use project dir as working directory (no /opt/transcoder)
-WORK_DIR="$(pwd)"
+WORK_DIR="${INSTALL_DIR}"
 tee /etc/systemd/system/${SERVICE_NAME}.service > /dev/null <<EOF
 [Unit]
 Description=Video Transcoder Service (Local)
@@ -106,7 +114,7 @@ StartLimitBurst=5
 Type=simple
 WorkingDirectory=${WORK_DIR}
 EnvironmentFile=${WORK_DIR}/.env.systemd
-ExecStart=${WORK_DIR}/target/release/${BINARY_NAME}
+ExecStart=${WORK_DIR}/${BINARY_NAME}
 Restart=on-failure
 RestartSec=5
 
